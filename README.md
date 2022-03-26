@@ -5,12 +5,9 @@ An efficient way of running multiple concurrent `docker build` jobs on the [Buil
 ```shell
 # export DOCKER_HOST=ssh://...
 ❯ buildxargs <<EOF
-docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=dMT9PVmwW70' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=kZ8E_lDQm-g' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=NgZeYxl3aL8' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=3XK-xhpAbIM' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=iw3EdKNvm_g' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
+docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc' --output=$HOME https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
+docker build -o=. --platform=local --build-arg PREBUILT=1 git://github.com/FuzzyMonkeyCo/monkey
+docker build --platform=local -o . git://github.com/docker/buildx
 EOF
 ```
 
