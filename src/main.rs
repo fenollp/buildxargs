@@ -41,23 +41,22 @@ struct CliArgs {
 fn main() -> Result<(), Box<dyn Error>> {
     let args = CliArgs::parse();
 
-    let cmds: Vec<String>;
     let blanks = |line: &String| !line.trim().is_empty();
-    if args.file == "-" {
-        cmds = io::stdin()
+    let cmds: Vec<String> = if args.file == "-" {
+        io::stdin()
             .lock()
             .lines()
             .filter_map(|res| res.ok())
             .filter(blanks)
-            .collect();
+            .collect()
     } else {
         let file = File::open(args.file)?;
-        cmds = BufReader::new(file)
+        BufReader::new(file)
             .lines()
             .filter_map(|res| res.ok())
             .filter(blanks)
-            .collect();
-    }
+            .collect()
+    };
     if cmds.is_empty() {
         return Err("no commands given".into());
     }
