@@ -52,6 +52,8 @@ cargo install --git https://github.com/fenollp/buildxargs
 
 ## See also
 
-Related posts:
-* My [vi`xargs`](https://fenollp.github.io/vixargs-visual-xargs) tool
+My [blog post about this](https://fenollp.github.io/buildxargs_xargs_for_buildkit).
+
+Related:
+* My [vi[sual]`xargs`](https://fenollp.github.io/vixargs-visual-xargs) tool
 * [`fmtd`](https://fenollp.github.io/a_simple_framework_for_universal_tools) and *a lib for piping data in & out of `docker build` tasks*
