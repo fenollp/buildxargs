@@ -28,7 +28,22 @@ EOF
 ## Usage
 
 ```
---print
+buildxargs 1.0.0
+Pierre Fenoll <pierrefenoll@gmail.com>
+xargs for BuildKit with docker buildx bake
+
+USAGE:
+    buildxargs [OPTIONS]
+
+OPTIONS:
+        --debug                  Print more things
+    -f, --file <FILE>            Read commands from file [default: -]
+    -h, --help                   Print help information
+        --no-cache               Do not use cache when building the image
+        --print                  Print the options without building
+        --progress <PROGRESS>    Set type of progress output ("plain", "tty") [default: auto]
+        --pull                   Always attempt to pull all referenced images
+    -V, --version                Print version information
 ```
 
 ## Installing

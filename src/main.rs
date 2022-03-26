@@ -1,7 +1,10 @@
 use clap::Parser;
-use shlex;
 use std::error::Error;
-// use std::fs;
+use std::fs;
+use std::fs::File;
+use std::io;
+use std::io::BufRead;
+use std::io::BufReader;
 use std::io::Write;
 use std::process::Command;
 use tempfile::NamedTempFile;
@@ -29,56 +32,51 @@ struct CliArgs {
     /// Always attempt to pull all referenced images
     #[clap(long = "pull")]
     pull: bool,
+
+    /// Print more things
+    #[clap(long = "debug")]
+    debug: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = CliArgs::parse();
 
-    // FIXME
-    // Note: cannot read from STDIN as `tmux attach` expects STDIN ~= /dev/null
-    // let cmds = read_commands(args.arg_file)?;
-    let cmds = vec![
-        // "docker build --help .",
-        "docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main",
-        "docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=dMT9PVmwW70' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main",
-        "docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=kZ8E_lDQm-g' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main",
-        "docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=NgZeYxl3aL8' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main",
-        "docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=3XK-xhpAbIM' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main",
-        "docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=iw3EdKNvm_g' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main",
-    ];
-    if cmds.len() == 0 {
+    let cmds: Vec<String>;
+    let blanks = |line: &String| !line.trim().is_empty();
+    if args.file == "-" {
+        cmds = io::stdin()
+            .lock()
+            .lines()
+            .filter_map(|res| res.ok())
+            .filter(blanks)
+            .collect();
+    } else {
+        let file = File::open(args.file)?;
+        cmds = BufReader::new(file)
+            .lines()
+            .filter_map(|res| res.ok())
+            .filter(blanks)
+            .collect();
+    }
+    if cmds.is_empty() {
         return Err("no commands given".into());
     }
+
     let mut targets = Vec::with_capacity(cmds.len());
     for cmd in cmds {
-        match shlex::split(cmd) {
+        match shlex::split(&cmd) {
             None => return Err(format!("typo in {:?}", cmd).into()),
             Some(words) => {
-                println!();
-                println!("words: {:?}", words);
-                println!();
                 let parsed = DockerBuildArgs::try_parse_from(words).map_err(|e| {
                     eprintln!("Could not parse {:?}", cmd);
                     e.exit() // NOTE: fn exit() -> !
                 });
                 if let Ok(build_args) = parsed {
-                    println!("build_args: {:?}", build_args);
-                    println!();
                     targets.push(build_args);
                 }
             }
         }
     }
-
-    // let mut inited = false;
-    // for cmd in cmds {
-    //     if !inited {
-    //         inited = true;
-    //         tmux_type(&cmd)?;
-    //         continue;
-    //     }
-    //     tmux(&["split-window"])?;
-    // }
 
     let mut command = Command::new("docker");
     command.env("DOCKER_BUILDKIT", "1");
@@ -103,10 +101,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     writeln!(f, "]}}")?;
     for (i, target) in targets.iter().enumerate() {
         let DockerBuild::Build(target) = &target.build;
-
         writeln!(f, "target \"{}\" {{", 1 + i)?;
 
-        if target.build_args.len() != 0 {
+        if !target.build_args.is_empty() {
             writeln!(f, "args = {{")?;
             for arg in &target.build_args {
                 match arg.split_once('=') {
@@ -122,7 +119,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if let Some(cache_to) = &target.cache_to {
-            writeln!(f, "cache-to = [{:?}]", cache_to)?;
+            // TODO
+            eprintln!("Ignoring --cache-to {:?}", cache_to);
+            // error: cache export feature is currently not supported for docker driver
+            // cache-to = ["type=registry,ref=ghcr.io/user/repo:binaries,mode=max"]
+            // writeln!(f, "cache-to = [{:?}]", cache_to)?;
         }
 
         writeln!(f, "context = {:?}", &target.path_or_url)?;
@@ -178,8 +179,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         writeln!(f, "}}")?;
     }
     f.flush()?;
-    // let data = fs::read_to_string(f.path())?;
-    // println!(">>> {}", data);
+    if args.debug {
+        let data = fs::read_to_string(f.path())?;
+        eprintln!("{}", data);
+    }
     // TODO: pass data through BufWriter to STDIN with `-f-`
     command.arg("-f");
     command.arg(f.path());
@@ -194,7 +197,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 #[derive(Parser, Debug)]
-#[clap(author, version, about, long_about=None)]
+#[clap(name="docker", about = "Start a build", long_about=None)]
 // DockerBuildArgs correspond to `DOCKER_BUILDKIT=1 docker build --help`
 struct DockerBuildArgs {
     #[clap(subcommand)]
@@ -288,26 +291,3 @@ struct BuildArgs {
     #[clap(long = "target")]
     target: Option<String>, // target
 }
-
-// fn read_commands<P>(filename: P) -> QuickResult<Vec<String>>
-// where
-//     P: AsRef<Path>,
-// {
-//     let file = File::open(filename)?;
-//     let mut cmds = vec![];
-//     for line in io::BufReader::new(file).lines() {
-//         let line = line?;
-//         cmds.secret(line);
-//     }
-//     Ok(cmds)
-// }
-
-// target "binaries" {
-//   inherits = ["dockerfile"]
-//   target = "binaries"
-//   output = ["."]
-//   cache-from = ["type=registry,ref=ghcr.io/fuzzymonkeyco/monkey:binaries"]
-//   # TODO: cache-to
-//   # error: cache export feature is currently not supported for docker driver
-//   # cache-to = ["type=registry,ref=ghcr.io/fuzzymonkeyco/monkey:binaries,mode=max"]
-// }
