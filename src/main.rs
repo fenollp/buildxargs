@@ -152,7 +152,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if let Some(platform) = &target.platform {
-            writeln!(f, "platform = [{:?}]", platform)?;
+            writeln!(f, "platforms = [{:?}]", platform)?;
         }
 
         if target.pull {
@@ -220,7 +220,7 @@ enum DockerBuild {
 // no-cache
 // no-cache-filter
 // output
-// platform
+// platforms
 // pull
 // secrets
 // ssh
@@ -268,7 +268,7 @@ struct BuildArgs {
 
     /// Set target platform for build
     #[clap(long = "platform")]
-    platform: Option<String>, // platform (TODO: stringArray)
+    platform: Option<String>, // platforms (TODO: stringArray)
 
     /// Always attempt to pull all referenced images
     #[clap(long = "pull")]

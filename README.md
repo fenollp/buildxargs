@@ -6,8 +6,8 @@ An efficient way of running multiple concurrent `docker build` jobs on the [Buil
 # export DOCKER_HOST=ssh://...
 ❯ buildxargs <<EOF
 docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc' --output=$HOME https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-docker build -o=. --platform=local --build-arg PREBUILT=1 git://github.com/FuzzyMonkeyCo/monkey
-docker build --platform=local -o . git://github.com/docker/buildx
+docker build -o=. --platform=local --build-arg PREBUILT=1 https://github.com/FuzzyMonkeyCo/monkey.git
+docker build --platform=local -o . https://github.com/docker/buildx.git
 EOF
 ```
 

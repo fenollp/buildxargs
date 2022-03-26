@@ -19,8 +19,8 @@ jobs:
     - run: |
         echo >commands.txt
         echo "docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc' --output=$HOME https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main" >>commands.txt
-        echo "docker build -o=. --platform=local --build-arg PREBUILT=1 git://github.com/FuzzyMonkeyCo/monkey" >>commands.txt
-        echo "docker build --platform=local -o . git://github.com/docker/buildx" >>commands.txt
+        echo "docker build -o=. --platform=local --build-arg PREBUILT=1 https://github.com/FuzzyMonkeyCo/monkey.git" >>commands.txt
+        echo "docker build --platform=local -o . https://github.com/docker/buildx.git" >>commands.txt
         cat commands.txt
     - run: cargo run -- --debug --print <commands.txt
     - uses: actions-rs/cargo@v1
