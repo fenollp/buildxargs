@@ -16,35 +16,23 @@ jobs:
       with:
         command: test
         args: --all-features
-    - uses: actions-rs/cargo@v1
-      with:
-        command: run
-        args: |
-          -- <<EOF
-          docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-          docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=dMT9PVmwW70' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-          docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=kZ8E_lDQm-g' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-          docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=NgZeYxl3aL8' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-          docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=3XK-xhpAbIM' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-          docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=iw3EdKNvm_g' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-          EOF
     - run: |
-        cat >commands.txt <<EOF
-        docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-        docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=dMT9PVmwW70' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-        docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=kZ8E_lDQm-g' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-        docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=NgZeYxl3aL8' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-        docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=3XK-xhpAbIM' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-        docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=iw3EdKNvm_g' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main
-        EOF
+        echo >commands.txt
+        echo "docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main" >>commands.txt
+        echo "docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=dMT9PVmwW70' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main" >>commands.txt
+        echo "docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=kZ8E_lDQm-g' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main" >>commands.txt
+        echo "docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=NgZeYxl3aL8' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main" >>commands.txt
+        echo "docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=3XK-xhpAbIM' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main" >>commands.txt
+        echo "docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=iw3EdKNvm_g' --output=/home/pete/ https://github.com/fenollp/dockerhost-tools--yt-dlp.git#main" >>commands.txt
+    - run: cargo run -- --debug --print <commands.txt
     - uses: actions-rs/cargo@v1
       with:
         command: run
-        args: -- -f commands.txt --debug --print
+        args: -- -f commands.txt --print
     - uses: actions-rs/cargo@v1
       with:
         command: run
-        args: -- -f commands.txt
+        args: --release -- -f commands.txt
 
   fmt:
     name: cargo fmt
