@@ -24,7 +24,7 @@ EOF
 
 ## Usage
 
-```
+```shell
 buildxargs 1.0.0
 Pierre Fenoll <pierrefenoll@gmail.com>
 xargs for BuildKit with docker buildx bake
