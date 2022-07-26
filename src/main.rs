@@ -118,11 +118,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if let Some(cache_to) = &target.cache_to {
-            // TODO
-            eprintln!("Ignoring --cache-to {:?}", cache_to);
-            // error: cache export feature is currently not supported for docker driver
-            // cache-to = ["type=registry,ref=ghcr.io/user/repo:binaries,mode=max"]
-            // writeln!(f, "cache-to = [{:?}]", cache_to)?;
+            writeln!(f, "  cache-to = [{cache_to:?}]")?;
         }
 
         let context = &target.path_or_url;
