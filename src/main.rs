@@ -64,10 +64,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut targets = Vec::with_capacity(cmds.len());
     for cmd in &cmds {
         match shlex::split(&cmd) {
-            None => return Err(format!("typo in {:?}", cmd).into()),
+            None => return Err(format!("typo in {cmd:?}").into()),
             Some(words) => {
                 let parsed = DockerBuildArgs::try_parse_from(words).map_err(|e| {
-                    eprintln!("Could not parse {:?}", cmd);
+                    eprintln!("Could not parse {cmd:?}");
                     e.exit() // NOTE: fn exit() -> !
                 });
                 if let Ok(build_args) = parsed {
@@ -93,9 +93,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut f = NamedTempFile::new()?;
-    writeln!(f, "group {:?} {{ targets = [", "default")?;
+    writeln!(f, "group \"default\" {{ targets = [")?;
     for i in 1..(targets.len() + 1) {
-        writeln!(f, "\"{}\",", i)?;
+        writeln!(f, "\"{i:?}\",")?;
     }
     writeln!(f, "]}}")?;
     for (i, target) in targets.iter().enumerate() {
@@ -106,15 +106,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             writeln!(f, "args = {{")?;
             for arg in &target.build_args {
                 match arg.split_once('=') {
-                    Some((key, value)) => writeln!(f, "{:?} = {:?}", key, value)?,
-                    None => return Err(format!("bad key=value: {:?}", arg).into()),
+                    Some((key, value)) => writeln!(f, "{key:?} = {value:?}")?,
+                    None => return Err(format!("bad key=value: {arg:?}").into()),
                 }
             }
             writeln!(f, "}}")?;
         }
 
         if let Some(cache_from) = &target.cache_from {
-            writeln!(f, "cache-from = [{:?}]", cache_from)?;
+            writeln!(f, "cache-from = [{cache_from:?}]")?;
         }
 
         if let Some(cache_to) = &target.cache_to {
@@ -125,18 +125,19 @@ fn main() -> Result<(), Box<dyn Error>> {
             // writeln!(f, "cache-to = [{:?}]", cache_to)?;
         }
 
-        writeln!(f, "context = {:?}", &target.path_or_url)?;
+        let context = &target.path_or_url;
+        writeln!(f, "context = {context:?}")?;
 
         if let Some(build_context) = &target.build_context {
-            writeln!(f, "contexts = [{:?}]", build_context)?;
+            writeln!(f, "contexts = [{build_context:?}]")?;
         }
 
         if let Some(file) = &target.file {
-            writeln!(f, "dockerfile = {:?}", file)?;
+            writeln!(f, "dockerfile = {file:?}")?;
         }
 
         if let Some(label) = &target.label {
-            writeln!(f, "labels = [{:?}]", label)?;
+            writeln!(f, "labels = [{label:?}]")?;
         }
 
         if target.no_cache {
@@ -144,15 +145,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if let Some(no_cache_filter) = &target.no_cache_filter {
-            writeln!(f, "no-cache-filter = [{:?}]", no_cache_filter)?;
+            writeln!(f, "no-cache-filter = [{no_cache_filter:?}]")?;
         }
 
         if let Some(output) = &target.output {
-            writeln!(f, "output = [{:?}]", output)?;
+            writeln!(f, "output = [{output:?}]")?;
         }
 
         if let Some(platform) = &target.platform {
-            writeln!(f, "platforms = [{:?}]", platform)?;
+            writeln!(f, "platforms = [{platform:?}]")?;
         }
 
         if target.pull {
@@ -160,19 +161,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if let Some(secret) = &target.secret {
-            writeln!(f, "secrets = [{:?}]", secret)?;
+            writeln!(f, "secrets = [{secret:?}]")?;
         }
 
         if let Some(ssh) = &target.ssh {
-            writeln!(f, "ssh = [{:?}]", ssh)?;
+            writeln!(f, "ssh = [{ssh:?}]")?;
         }
 
         if let Some(tag) = &target.tag {
-            writeln!(f, "tags = [{:?}]", tag)?;
+            writeln!(f, "tags = [{tag:?}]")?;
         }
 
         if let Some(target) = &target.target {
-            writeln!(f, "target = [{:?}]", target)?;
+            writeln!(f, "target = [{target:?}]")?;
         }
 
         writeln!(f, "}}")?;
@@ -180,7 +181,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     f.flush()?;
     if args.debug {
         let data = fs::read_to_string(f.path())?;
-        eprintln!("{}", data);
+        eprintln!("{data}");
     }
     // TODO: pass data through BufWriter to STDIN with `-f-`
     command.arg("-f");
