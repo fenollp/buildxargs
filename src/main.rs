@@ -3,6 +3,7 @@ use std::error::Error;
 use std::fs::File;
 use std::io::{stderr, stdin, BufRead, BufReader, Write};
 use std::process::Command;
+use std::process::ExitStatus;
 use tempfile::NamedTempFile;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -48,7 +49,7 @@ fn main() -> Result<()> {
             .filter(blanks)
             .collect()
     } else {
-        let file = File::open(args.file)?;
+        let file = File::open(&args.file)?;
         BufReader::new(file)
             .lines()
             .filter_map(|res| res.ok())
@@ -67,11 +68,32 @@ fn main() -> Result<()> {
         write_as_buildx_bake(&mut stderr, &targets)?;
     }
 
+    let status = run_bake(&args, &targets)?;
+
+    let prefix = "command `docker buildx bake`";
+    match status.code() {
+        None => Err(format!("{prefix} terminated by signal").into()),
+        Some(0) => Ok(()),
+        Some(code) => {
+            let retried = 3;
+            if retried != 0 {
+                eprintln!("Terminated successfully:");
+                eprintln!("Failed:");
+                for cmd in &cmds {
+                    eprintln!("  {cmd}");
+                }
+            }
+            Err(format!("{prefix} failed with {code}").into())
+        }
+    }
+}
+
+fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Result<ExitStatus> {
     let mut command = Command::new("docker");
     command.env("DOCKER_BUILDKIT", "1");
     command.arg("buildx");
     command.arg("bake");
-    command.arg("--progress").arg(args.progress);
+    command.arg("--progress").arg(&args.progress);
     if args.no_cache {
         command.arg("--no-cache");
     }
@@ -89,23 +111,7 @@ fn main() -> Result<()> {
     command.arg("-f");
     command.arg(f.path());
 
-    let status = command.status()?;
-    let prefix = "command `docker buildx bake`";
-    match status.code() {
-        None => Err(format!("{prefix} terminated by signal").into()),
-        Some(0) => Ok(()),
-        Some(code) => {
-            let retried = 3;
-            if retried != 0 {
-                eprintln!("Terminated successfully:");
-                eprintln!("Failed:");
-                for cmd in &cmds {
-                    eprintln!("  {cmd}");
-                }
-            }
-            Err(format!("{prefix} failed with {code}").into())
-        }
-    }
+    Ok(command.status()?)
 }
 
 fn parse_shell_commands(cmds: &[String]) -> Result<Vec<DockerBuildArgs>> {
