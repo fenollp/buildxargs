@@ -64,10 +64,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut targets = Vec::with_capacity(cmds.len());
     for cmd in &cmds {
         match shlex::split(&cmd) {
-            None => return Err(format!("typo in {cmd:?}").into()),
+            None => return Err(format!("Typo in {cmd}").into()),
             Some(words) => {
                 let parsed = DockerBuildArgs::try_parse_from(words).map_err(|e| {
-                    eprintln!("Could not parse {cmd:?}");
+                    eprintln!("Could not parse {cmd}");
                     e.exit() // NOTE: fn exit() -> !
                 });
                 if let Ok(build_args) = parsed {
@@ -94,8 +94,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut f = NamedTempFile::new()?;
     writeln!(f, "group \"default\" {{\n  targets = [")?;
-    for i in 1..(targets.len() + 1) {
-        writeln!(f, "    \"{i:?}\",")?;
+    for i in 1..=targets.len() {
+        writeln!(f, "    \"{i}\",")?;
     }
     writeln!(f, "  ]\n}}")?;
     for (i, target) in targets.iter().enumerate() {
@@ -186,9 +186,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let status = command.status()?;
     let prefix = "command `docker buildx bake`";
     match status.code() {
+        None => Err(format!("{prefix} terminated by signal").into()),
         Some(0) => Ok(()),
-        Some(code) => Err(format!("{} failed with {}", prefix, code).into()),
-        None => Err(format!("{} terminated by signal", prefix).into()),
+        Some(code) => {
+            for cmd in &cmds {
+                eprintln!("  {cmd}");
+            }
+            Err(format!("{prefix} failed with {code}").into())
+        }
     }
 }
 
