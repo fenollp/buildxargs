@@ -9,6 +9,8 @@ use std::io::Write;
 use std::process::Command;
 use tempfile::NamedTempFile;
 
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about=None)]
 // CliArgs correspond to `docker buildx bake --help`
@@ -38,7 +40,7 @@ struct CliArgs {
     debug: bool,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     let args = CliArgs::parse();
 
     let blanks = |line: &String| !line.trim().is_empty();
@@ -61,21 +63,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err("no commands given".into());
     }
 
-    let mut targets = Vec::with_capacity(cmds.len());
-    for cmd in &cmds {
-        match shlex::split(&cmd) {
-            None => return Err(format!("Typo in {cmd}").into()),
-            Some(words) => {
-                let parsed = DockerBuildArgs::try_parse_from(words).map_err(|e| {
-                    eprintln!("Could not parse {cmd}");
-                    e.exit() // NOTE: fn exit() -> !
-                });
-                if let Ok(build_args) = parsed {
-                    targets.push(build_args);
-                }
-            }
-        }
-    }
+    // Parse here to fail early
+    let targets = parse_shell_commands(&cmds)?;
 
     let mut command = Command::new("docker");
     command.env("DOCKER_BUILDKIT", "1");
@@ -93,14 +82,63 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut f = NamedTempFile::new()?;
+    write_as_buildx_bake(&mut f, &targets)?;
+    f.flush()?;
+    if args.debug {
+        let data = fs::read_to_string(f.path())?;
+        eprintln!("{data}");
+    }
+    // TODO: pass data through BufWriter to STDIN with `-f-`
+    command.arg("-f");
+    command.arg(f.path());
+
+    let status = command.status()?;
+    let prefix = "command `docker buildx bake`";
+    match status.code() {
+        None => Err(format!("{prefix} terminated by signal").into()),
+        Some(0) => Ok(()),
+        Some(code) => {
+            let retried = 3;
+            if retried != 0 {
+                eprintln!("Terminated successfully:");
+                eprintln!("Failed:");
+                for cmd in &cmds {
+                    eprintln!("  {cmd}");
+                }
+            }
+            Err(format!("{prefix} failed with {code}").into())
+        }
+    }
+}
+
+fn parse_shell_commands(cmds: &[String]) -> Result<Vec<DockerBuildArgs>> {
+    let mut targets = Vec::with_capacity(cmds.len());
+    for cmd in cmds {
+        match shlex::split(cmd) {
+            None => return Err(format!("Typo in {cmd}").into()),
+            Some(words) => {
+                let parsed = DockerBuildArgs::try_parse_from(words).map_err(|e| {
+                    eprintln!("Could not parse {cmd}"); //fixme:drop exit and use ?
+                    e.exit() // NOTE: fn exit() -> !
+                });
+                if let Ok(build_args) = parsed {
+                    targets.push(build_args);
+                }
+            }
+        }
+    }
+    Ok(targets)
+}
+
+fn write_as_buildx_bake(f: &mut impl Write, targets: &[DockerBuildArgs]) -> Result<()> {
     writeln!(f, "group \"default\" {{\n  targets = [")?;
     for i in 1..=targets.len() {
         writeln!(f, "    \"{i}\",")?;
     }
     writeln!(f, "  ]\n}}")?;
     for (i, target) in targets.iter().enumerate() {
-        let DockerBuild::Build(target) = &target.build;
-        writeln!(f, "target \"{}\" {{", 1 + i)?;
+        let (i, DockerBuild::Build(target)) = (i + 1, &target.build);
+        writeln!(f, "target \"{i}\" {{")?;
 
         if !target.build_args.is_empty() {
             writeln!(f, "  args = {{")?;
@@ -174,27 +212,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         writeln!(f, "}}")?;
     }
-    f.flush()?;
-    if args.debug {
-        let data = fs::read_to_string(f.path())?;
-        eprintln!("{data}");
-    }
-    // TODO: pass data through BufWriter to STDIN with `-f-`
-    command.arg("-f");
-    command.arg(f.path());
-
-    let status = command.status()?;
-    let prefix = "command `docker buildx bake`";
-    match status.code() {
-        None => Err(format!("{prefix} terminated by signal").into()),
-        Some(0) => Ok(()),
-        Some(code) => {
-            for cmd in &cmds {
-                eprintln!("  {cmd}");
-            }
-            Err(format!("{prefix} failed with {code}").into())
-        }
-    }
+    Ok(())
 }
 
 #[derive(Parser, Debug)]
