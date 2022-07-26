@@ -1,11 +1,7 @@
 use clap::Parser;
 use std::error::Error;
-use std::fs;
 use std::fs::File;
-use std::io;
-use std::io::BufRead;
-use std::io::BufReader;
-use std::io::Write;
+use std::io::{stderr, stdin, BufRead, BufReader, Write};
 use std::process::Command;
 use tempfile::NamedTempFile;
 
@@ -45,7 +41,7 @@ fn main() -> Result<()> {
 
     let blanks = |line: &String| !line.trim().is_empty();
     let cmds: Vec<String> = if args.file == "-" {
-        io::stdin()
+        stdin()
             .lock()
             .lines()
             .filter_map(|res| res.ok())
@@ -66,6 +62,11 @@ fn main() -> Result<()> {
     // Parse here to fail early
     let targets = parse_shell_commands(&cmds)?;
 
+    if args.debug {
+        let mut stderr = stderr().lock();
+        write_as_buildx_bake(&mut stderr, &targets)?;
+    }
+
     let mut command = Command::new("docker");
     command.env("DOCKER_BUILDKIT", "1");
     command.arg("buildx");
@@ -84,10 +85,6 @@ fn main() -> Result<()> {
     let mut f = NamedTempFile::new()?;
     write_as_buildx_bake(&mut f, &targets)?;
     f.flush()?;
-    if args.debug {
-        let data = fs::read_to_string(f.path())?;
-        eprintln!("{data}");
-    }
     // TODO: pass data through BufWriter to STDIN with `-f-`
     command.arg("-f");
     command.arg(f.path());
