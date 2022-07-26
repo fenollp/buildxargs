@@ -93,28 +93,28 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut f = NamedTempFile::new()?;
-    writeln!(f, "group \"default\" {{ targets = [")?;
+    writeln!(f, "group \"default\" {{\n  targets = [")?;
     for i in 1..(targets.len() + 1) {
-        writeln!(f, "\"{i:?}\",")?;
+        writeln!(f, "    \"{i:?}\",")?;
     }
-    writeln!(f, "]}}")?;
+    writeln!(f, "  ]\n}}")?;
     for (i, target) in targets.iter().enumerate() {
         let DockerBuild::Build(target) = &target.build;
         writeln!(f, "target \"{}\" {{", 1 + i)?;
 
         if !target.build_args.is_empty() {
-            writeln!(f, "args = {{")?;
+            writeln!(f, "  args = {{")?;
             for arg in &target.build_args {
                 match arg.split_once('=') {
-                    Some((key, value)) => writeln!(f, "{key:?} = {value:?}")?,
+                    Some((key, value)) => writeln!(f, "    {key:?} = {value:?}")?,
                     None => return Err(format!("bad key=value: {arg:?}").into()),
                 }
             }
-            writeln!(f, "}}")?;
+            writeln!(f, "  }}")?;
         }
 
         if let Some(cache_from) = &target.cache_from {
-            writeln!(f, "cache-from = [{cache_from:?}]")?;
+            writeln!(f, "  cache-from = [{cache_from:?}]")?;
         }
 
         if let Some(cache_to) = &target.cache_to {
@@ -126,54 +126,54 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         let context = &target.path_or_url;
-        writeln!(f, "context = {context:?}")?;
+        writeln!(f, "  context = {context:?}")?;
 
         if let Some(build_context) = &target.build_context {
-            writeln!(f, "contexts = [{build_context:?}]")?;
+            writeln!(f, "  contexts = [{build_context:?}]")?;
         }
 
         if let Some(file) = &target.file {
-            writeln!(f, "dockerfile = {file:?}")?;
+            writeln!(f, "  dockerfile = {file:?}")?;
         }
 
         if let Some(label) = &target.label {
-            writeln!(f, "labels = [{label:?}]")?;
+            writeln!(f, "  labels = [{label:?}]")?;
         }
 
         if target.no_cache {
-            writeln!(f, "no-cache = true")?;
+            writeln!(f, "  no-cache = true")?;
         }
 
         if let Some(no_cache_filter) = &target.no_cache_filter {
-            writeln!(f, "no-cache-filter = [{no_cache_filter:?}]")?;
+            writeln!(f, "  no-cache-filter = [{no_cache_filter:?}]")?;
         }
 
         if let Some(output) = &target.output {
-            writeln!(f, "output = [{output:?}]")?;
+            writeln!(f, "  output = [{output:?}]")?;
         }
 
         if let Some(platform) = &target.platform {
-            writeln!(f, "platforms = [{platform:?}]")?;
+            writeln!(f, "  platforms = [{platform:?}]")?;
         }
 
         if target.pull {
-            writeln!(f, "pull = true")?;
+            writeln!(f, "  pull = true")?;
         }
 
         if let Some(secret) = &target.secret {
-            writeln!(f, "secrets = [{secret:?}]")?;
+            writeln!(f, "  secrets = [{secret:?}]")?;
         }
 
         if let Some(ssh) = &target.ssh {
-            writeln!(f, "ssh = [{ssh:?}]")?;
+            writeln!(f, "  ssh = [{ssh:?}]")?;
         }
 
         if let Some(tag) = &target.tag {
-            writeln!(f, "tags = [{tag:?}]")?;
+            writeln!(f, "  tags = [{tag:?}]")?;
         }
 
         if let Some(target) = &target.target {
-            writeln!(f, "target = [{target:?}]")?;
+            writeln!(f, "  target = [{target:?}]")?;
         }
 
         writeln!(f, "}}")?;
