@@ -62,7 +62,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut targets = Vec::with_capacity(cmds.len());
-    for cmd in cmds {
+    for cmd in &cmds {
         match shlex::split(&cmd) {
             None => return Err(format!("typo in {:?}", cmd).into()),
             Some(words) => {
