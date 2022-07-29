@@ -14,6 +14,3 @@ repository = "https://github.com/fenollp/buildxargs"
 clap = { version = "3", features = ["derive", "color"] }
 tempfile = "3"
 shlex = "1"
-
-[dev-dependencies]
-rand = "0.8"
