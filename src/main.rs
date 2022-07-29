@@ -1,12 +1,11 @@
+use buildxargs::try_quick;
 use clap::Parser;
-use std::error::Error;
 use std::fs::File;
 use std::io::{stderr, stdin, BufRead, BufReader, Write};
-use std::process::Command;
-use std::process::ExitStatus;
+use std::process::{Command, ExitStatus};
 use tempfile::NamedTempFile;
 
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about=None)]
@@ -72,50 +71,40 @@ fn main() -> Result<()> {
         write_as_buildx_bake(&mut stderr, &targets)?;
     }
 
-    let prefix = "command `docker buildx bake`";
+    let ixs_failed = try_quick(
+        &targets,
+        args.retry,
+        |targets: &[DockerBuildArgs]| -> Result<()> {
+            let prefix = "command `docker buildx bake`";
+            let status = run_bake(&args, targets)?;
+            match status.code() {
+                None => Err(format!("{prefix} terminated by signal").into()),
+                Some(0) => Ok(()),
+                Some(code) => Err(format!("{prefix} failed with {code}").into()),
+            }
+        },
+    )?;
 
-    type Retry = FnOnce;
-    let (passed, failed)=    QuickSearch::new(targets, args.retry)
-    .run(|targets: &[&DockerBuildArgs], retry: Retry|->Result<()>{
-        let status = run_bake(&args, &targets)?;
-        match status.code() {
-            None => return Err(format!("{prefix} terminated by signal").into()),
-            Some(0) =>             return Ok(()),
-            Some(code) => return retry(Err(format!("{prefix} failed with {code}").into())), 
-        }
-    })?;
-    for (res, msg) in [(passed, "Terminated successfully:"), (failed, "Failed:")] {
-    if !res.is_empty(){
-                eprintln!(msg);
-                res.iter().for_each(|ix|{
-                    let cmd = &cmds[ix];
-                    eprintln!("  {cmd}\n    {res}");
-                });
-    }
-    }
-
-    let mut successes = vec![false; targets.len()];
-    // let indices = vec![vec![0,1], vec![0], vec![1]];
-    let mut indices = (0..=targets.len()).collect::<Vec<_>>();
-    for retried in 0..args.retry {
-        let status = run_bake(&args, &targets)?;
-        match status.code() {
-            None => return Err(format!("{prefix} terminated by signal").into()),
-            Some(0) if args.retry == 0 => return Ok(()),
-            Some(0) => {}
-            Some(code) => {
+    let mut printed = false;
+    for ix in 0..targets.len() {
+        if !ixs_failed.contains_key(&ix) {
+            if !printed {
+                printed = true;
                 eprintln!("Terminated successfully:");
-                eprintln!("Failed:");
-                for cmd in &cmds {
-                    eprintln!("  {cmd}");
-                }
-                if args.retry == 0 || args.retry == retried {
-                    return Err(format!("{prefix} failed with {code}").into());
-                }
-                // panic!("FIXME: retry");
+            }
+            eprintln!("  {}", &cmds[ix]);
+        }
+        if !ixs_failed.is_empty() {
+            eprintln!("Failed:");
+            let mut ixs = ixs_failed.keys().map(|&ix| ix).collect::<Vec<_>>();
+            ixs.sort();
+            for ix in ixs {
+                let err = ixs_failed.get(&ix).unwrap();
+                eprintln!("  {}\n    {err}", &cmds[ix]);
             }
         }
     }
+
     // Ok(())
     panic!("unreachable");
 }
@@ -253,7 +242,7 @@ fn write_as_buildx_bake(f: &mut impl Write, targets: &[DockerBuildArgs]) -> Resu
     Ok(())
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[clap(name="docker", about = "Start a build", long_about=None)]
 // DockerBuildArgs correspond to `DOCKER_BUILDKIT=1 docker build --help`
 struct DockerBuildArgs {
@@ -261,7 +250,7 @@ struct DockerBuildArgs {
     build: DockerBuild,
 }
 
-#[derive(clap::Subcommand, Debug)]
+#[derive(clap::Subcommand, Debug, Clone)]
 enum DockerBuild {
     Build(BuildArgs),
 }
@@ -284,7 +273,7 @@ enum DockerBuild {
 // ssh
 // tags
 // target
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 struct BuildArgs {
     path_or_url: String, // context
 
