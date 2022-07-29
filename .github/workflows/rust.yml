@@ -42,6 +42,25 @@ jobs:
         command: run
         args: --release -- -f commands.txt
 
+    - name: Test --retry
+      run: |
+        echo >girouette.Dockerfile
+        echo '# syntax=docker.io/docker/dockerfile:1@sha256:443aab4ca21183e069e7d8b2dc68006594f40bddf1b15bbd83f5137bd93e80e2' >>girouette.Dockerfile
+        echo 'FROM --platform=$BUILDPLATFORM docker.io/library/alpine@sha256:7580ece7963bfa863801466c0a488f11c86f85d9988051a9f9c68cb27f6b7872 AS alpine' >>girouette.Dockerfile
+        echo 'FROM alpine AS tryin' >>girouette.Dockerfile
+        echo 'ARG FAIL' >>girouette.Dockerfile
+        echo 'ARG SLEEP=1' >>girouette.Dockerfile
+        echo 'RUN set -ux && sleep "$SLEEP" && [[ -z "${FAIL:-}" ]] && echo Passed! >/girouette' >>girouette.Dockerfile
+        echo 'FROM scratch' >>girouette.Dockerfile
+        echo 'COPY --from=tryin /girouette /' >>girouette.Dockerfile
+
+        echo >commands.txt
+        echo 'docker build -o=. --build-arg FAIL=1 -f girouette.Dockerfile .' >>commands.txt
+        echo 'docker build -o=.                    -f girouette.Dockerfile .' >>commands.txt
+        cat commands.txt
+
+        ! cargo run --offline --locked --frozen --all-features --release -- --debug <commands.txt
+
 
   fmt:
     name: cargo fmt
