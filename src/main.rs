@@ -35,6 +35,10 @@ struct CliArgs {
     /// Print more things
     #[clap(long = "debug")]
     debug: bool,
+
+    /// Retry each failed build at most this many times
+    #[clap(long = "retry", default_value_t = 3u8)]
+    retry: u8,
 }
 
 fn main() -> Result<()> {
@@ -68,24 +72,52 @@ fn main() -> Result<()> {
         write_as_buildx_bake(&mut stderr, &targets)?;
     }
 
-    let status = run_bake(&args, &targets)?;
-
     let prefix = "command `docker buildx bake`";
-    match status.code() {
-        None => Err(format!("{prefix} terminated by signal").into()),
-        Some(0) => Ok(()),
-        Some(code) => {
-            let retried = 3;
-            if retried != 0 {
+
+    type Retry = FnOnce;
+    let (passed, failed)=    QuickSearch::new(targets, args.retry)
+    .run(|targets: &[&DockerBuildArgs], retry: Retry|->Result<()>{
+        let status = run_bake(&args, &targets)?;
+        match status.code() {
+            None => return Err(format!("{prefix} terminated by signal").into()),
+            Some(0) =>             return Ok(()),
+            Some(code) => return retry(Err(format!("{prefix} failed with {code}").into())), 
+        }
+    })?;
+    for (res, msg) in [(passed, "Terminated successfully:"), (failed, "Failed:")] {
+    if !res.is_empty(){
+                eprintln!(msg);
+                res.iter().for_each(|ix|{
+                    let cmd = &cmds[ix];
+                    eprintln!("  {cmd}\n    {res}");
+                });
+    }
+    }
+
+    let mut successes = vec![false; targets.len()];
+    // let indices = vec![vec![0,1], vec![0], vec![1]];
+    let mut indices = (0..=targets.len()).collect::<Vec<_>>();
+    for retried in 0..args.retry {
+        let status = run_bake(&args, &targets)?;
+        match status.code() {
+            None => return Err(format!("{prefix} terminated by signal").into()),
+            Some(0) if args.retry == 0 => return Ok(()),
+            Some(0) => {}
+            Some(code) => {
                 eprintln!("Terminated successfully:");
                 eprintln!("Failed:");
                 for cmd in &cmds {
                     eprintln!("  {cmd}");
                 }
+                if args.retry == 0 || args.retry == retried {
+                    return Err(format!("{prefix} failed with {code}").into());
+                }
+                // panic!("FIXME: retry");
             }
-            Err(format!("{prefix} failed with {code}").into())
         }
     }
+    // Ok(())
+    panic!("unreachable");
 }
 
 fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Result<ExitStatus> {
@@ -102,7 +134,10 @@ fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Result<ExitStatus> {
     }
     if args.pull {
         command.arg("--pull");
-    }
+    } //fixme: build this once then maybe clone
+
+    // command.arg("--metadata-file");
+    // command.arg("/home/pete/wefwefwef/buildxargs.git/meta.data");
 
     let mut f = NamedTempFile::new()?;
     write_as_buildx_bake(&mut f, &targets)?;
