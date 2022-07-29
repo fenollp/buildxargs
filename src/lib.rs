@@ -7,14 +7,20 @@ use std::fmt::Display;
 pub fn try_quick<T, E, F>(values: &[T], maxdepth: u8, mut f: F) -> Result<HashMap<usize, String>, E>
 where
     T: Clone + std::fmt::Debug,
-    E: Display, //Clone, //+ std::error::Error, TODO: decide
+    E: Display,
     F: FnMut(&[T]) -> Result<(), E>,
 {
     assert!(!values.is_empty());
-    assert!(maxdepth > 0);
 
-    if let Ok(()) = f(values) {
+    let initial_attempt = f(values);
+    if let Ok(()) = initial_attempt {
         return Ok(HashMap::new());
+    }
+    if maxdepth == 0 {
+        if let Err(e) = initial_attempt {
+            return Err(e);
+        }
+        unreachable!();
     }
 
     let mut xs: Vec<T> = Vec::with_capacity(values.len());
@@ -40,8 +46,7 @@ where
                 Err(e) => {
                     for &ix in indices {
                         if !failed.contains_key(&ix) {
-                            //let _ = failed.insert(ix, e.clone());
-                            let _ = failed.insert(ix, format!("{e}"));
+                            let _ = failed.insert(ix, format!("{e}")); // TODO: e.clone()
                         }
                     }
                 }
@@ -68,6 +73,7 @@ fn test_bad_job_zero() {
     let errors = |range: RI<usize>| range.map(|v| (v, err.clone())).collect::<HashMap<_, _>>();
 
     for (d, errors) in [
+        (0, errors(0..=99)),
         (1, errors(0..=49)),
         (2, errors(0..=24)),
         (3, errors(0..=11)),

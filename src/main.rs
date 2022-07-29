@@ -94,19 +94,21 @@ fn main() -> Result<()> {
             }
             eprintln!("  {}", &cmds[ix]);
         }
-        if !ixs_failed.is_empty() {
-            eprintln!("Failed:");
-            let mut ixs = ixs_failed.keys().map(|&ix| ix).collect::<Vec<_>>();
-            ixs.sort();
-            for ix in ixs {
-                let err = ixs_failed.get(&ix).unwrap();
-                eprintln!("  {}\n    {err}", &cmds[ix]);
-            }
+    }
+    if !ixs_failed.is_empty() {
+        eprintln!("Failed:");
+        let mut ixs = ixs_failed.keys().map(|&ix| ix).collect::<Vec<_>>();
+        ixs.sort();
+        for ix in ixs {
+            let err = ixs_failed.get(&ix).unwrap();
+            eprintln!("  {}\n    {err}", &cmds[ix]);
         }
+        let n = ixs_failed.len();
+        let m = args.retry;
+        return Err(format!("{n} jobs failed after {m} retries",).into());
     }
 
-    // Ok(())
-    panic!("unreachable");
+    Ok(())
 }
 
 fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Result<ExitStatus> {
