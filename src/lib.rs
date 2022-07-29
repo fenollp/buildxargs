@@ -1,3 +1,4 @@
+use std::collections::hash_map::Entry::Vacant;
 use std::collections::HashMap;
 use std::fmt::Display;
 
@@ -45,8 +46,8 @@ where
                 Ok(()) => passed.extend(indices.iter()),
                 Err(e) => {
                     for &ix in indices {
-                        if !failed.contains_key(&ix) {
-                            let _ = failed.insert(ix, format!("{e}")); // TODO: e.clone()
+                        if let Vacant(entry) = failed.entry(ix) {
+                            let _ = entry.insert(format!("{e}")); // TODO: e.clone()
                         }
                     }
                 }

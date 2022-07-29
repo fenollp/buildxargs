@@ -85,23 +85,27 @@ fn main() -> Result<()> {
         },
     )?;
 
-    let mut printed = false;
-    for ix in 0..targets.len() {
-        if !ixs_failed.contains_key(&ix) {
-            if !printed {
-                printed = true;
-                eprintln!("Terminated successfully:");
-            }
-            eprintln!("  {}", &cmds[ix]);
-        }
-    }
     if !ixs_failed.is_empty() {
+        let mut printed = false;
+        for (ix, cmd) in cmds.iter().enumerate() {
+            if !ixs_failed.contains_key(&ix) {
+                if !printed {
+                    printed = true;
+                    eprintln!("Terminated successfully:");
+                }
+                eprintln!("  {}", cmd);
+            }
+        }
+
         eprintln!("Failed:");
-        let mut ixs = ixs_failed.keys().map(|&ix| ix).collect::<Vec<_>>();
+        let mut ixs = ixs_failed.keys().copied().collect::<Vec<_>>();
         ixs.sort();
         for ix in ixs {
-            let err = ixs_failed.get(&ix).unwrap();
-            eprintln!("  {}\n    {err}", &cmds[ix]);
+            if let Some(err) = ixs_failed.get(&ix) {
+                eprintln!("  {}\n    {err}", &cmds[ix]);
+            } else {
+                unreachable!();
+            }
         }
         let n = ixs_failed.len();
         let m = args.retry;
@@ -131,7 +135,7 @@ fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Result<ExitStatus> {
     // command.arg("/home/pete/wefwefwef/buildxargs.git/meta.data");
 
     let mut f = NamedTempFile::new()?;
-    write_as_buildx_bake(&mut f, &targets)?;
+    write_as_buildx_bake(&mut f, targets)?;
     f.flush()?;
     // TODO: pass data through BufWriter to STDIN with `-f-`
     command.arg("-f");
