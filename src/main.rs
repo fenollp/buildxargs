@@ -1,13 +1,11 @@
+use buildxargs::try_quick;
 use clap::Parser;
-use std::error::Error;
-use std::fs;
 use std::fs::File;
-use std::io;
-use std::io::BufRead;
-use std::io::BufReader;
-use std::io::Write;
-use std::process::Command;
+use std::io::{stderr, stdin, BufRead, BufReader, Write};
+use std::process::{Command, ExitStatus};
 use tempfile::NamedTempFile;
+
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about=None)]
@@ -36,21 +34,25 @@ struct CliArgs {
     /// Print more things
     #[clap(long = "debug")]
     debug: bool,
+
+    /// Retry each failed build at most this many times
+    #[clap(long = "retry", default_value_t = 3u8)]
+    retry: u8,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     let args = CliArgs::parse();
 
     let blanks = |line: &String| !line.trim().is_empty();
     let cmds: Vec<String> = if args.file == "-" {
-        io::stdin()
+        stdin()
             .lock()
             .lines()
             .filter_map(|res| res.ok())
             .filter(blanks)
             .collect()
     } else {
-        let file = File::open(args.file)?;
+        let file = File::open(&args.file)?;
         BufReader::new(file)
             .lines()
             .filter_map(|res| res.ok())
@@ -61,27 +63,64 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err("no commands given".into());
     }
 
-    let mut targets = Vec::with_capacity(cmds.len());
-    for cmd in cmds {
-        match shlex::split(&cmd) {
-            None => return Err(format!("typo in {:?}", cmd).into()),
-            Some(words) => {
-                let parsed = DockerBuildArgs::try_parse_from(words).map_err(|e| {
-                    eprintln!("Could not parse {:?}", cmd);
-                    e.exit() // NOTE: fn exit() -> !
-                });
-                if let Ok(build_args) = parsed {
-                    targets.push(build_args);
-                }
-            }
-        }
+    // Parse here to fail early
+    let targets = parse_shell_commands(&cmds)?;
+
+    if args.debug {
+        let mut stderr = stderr().lock();
+        write_as_buildx_bake(&mut stderr, &targets)?;
     }
 
+    let ixs_failed = try_quick(
+        &targets,
+        args.retry,
+        |targets: &[DockerBuildArgs]| -> Result<()> {
+            let prefix = "command `docker buildx bake`";
+            let status = run_bake(&args, targets)?;
+            match status.code() {
+                None => Err(format!("{prefix} terminated by signal").into()),
+                Some(0) => Ok(()),
+                Some(code) => Err(format!("{prefix} failed with {code}").into()),
+            }
+        },
+    )?;
+
+    if !ixs_failed.is_empty() {
+        let mut printed = false;
+        for (ix, cmd) in cmds.iter().enumerate() {
+            if !ixs_failed.contains_key(&ix) {
+                if !printed {
+                    printed = true;
+                    eprintln!("Terminated successfully:");
+                }
+                eprintln!("  {}", cmd);
+            }
+        }
+
+        eprintln!("Failed:");
+        let mut ixs = ixs_failed.keys().copied().collect::<Vec<_>>();
+        ixs.sort();
+        for ix in ixs {
+            if let Some(err) = ixs_failed.get(&ix) {
+                eprintln!("  {}\n    {err}", &cmds[ix]);
+            } else {
+                unreachable!();
+            }
+        }
+        let n = ixs_failed.len();
+        let m = args.retry;
+        return Err(format!("{n} jobs failed after {m} retries",).into());
+    }
+
+    Ok(())
+}
+
+fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Result<ExitStatus> {
     let mut command = Command::new("docker");
     command.env("DOCKER_BUILDKIT", "1");
     command.arg("buildx");
     command.arg("bake");
-    command.arg("--progress").arg(args.progress);
+    command.arg("--progress").arg(&args.progress);
     if args.no_cache {
         command.arg("--no-cache");
     }
@@ -93,109 +132,120 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut f = NamedTempFile::new()?;
-    writeln!(f, "group {:?} {{ targets = [", "default")?;
-    for i in 1..(targets.len() + 1) {
-        writeln!(f, "\"{}\",", i)?;
-    }
-    writeln!(f, "]}}")?;
-    for (i, target) in targets.iter().enumerate() {
-        let DockerBuild::Build(target) = &target.build;
-        writeln!(f, "target \"{}\" {{", 1 + i)?;
-
-        if !target.build_args.is_empty() {
-            writeln!(f, "args = {{")?;
-            for arg in &target.build_args {
-                match arg.split_once('=') {
-                    Some((key, value)) => writeln!(f, "{:?} = {:?}", key, value)?,
-                    None => return Err(format!("bad key=value: {:?}", arg).into()),
-                }
-            }
-            writeln!(f, "}}")?;
-        }
-
-        if let Some(cache_from) = &target.cache_from {
-            writeln!(f, "cache-from = [{:?}]", cache_from)?;
-        }
-
-        if let Some(cache_to) = &target.cache_to {
-            // TODO
-            eprintln!("Ignoring --cache-to {:?}", cache_to);
-            // error: cache export feature is currently not supported for docker driver
-            // cache-to = ["type=registry,ref=ghcr.io/user/repo:binaries,mode=max"]
-            // writeln!(f, "cache-to = [{:?}]", cache_to)?;
-        }
-
-        writeln!(f, "context = {:?}", &target.path_or_url)?;
-
-        if let Some(build_context) = &target.build_context {
-            writeln!(f, "contexts = [{:?}]", build_context)?;
-        }
-
-        if let Some(file) = &target.file {
-            writeln!(f, "dockerfile = {:?}", file)?;
-        }
-
-        if let Some(label) = &target.label {
-            writeln!(f, "labels = [{:?}]", label)?;
-        }
-
-        if target.no_cache {
-            writeln!(f, "no-cache = true")?;
-        }
-
-        if let Some(no_cache_filter) = &target.no_cache_filter {
-            writeln!(f, "no-cache-filter = [{:?}]", no_cache_filter)?;
-        }
-
-        if let Some(output) = &target.output {
-            writeln!(f, "output = [{:?}]", output)?;
-        }
-
-        if let Some(platform) = &target.platform {
-            writeln!(f, "platforms = [{:?}]", platform)?;
-        }
-
-        if target.pull {
-            writeln!(f, "pull = true")?;
-        }
-
-        if let Some(secret) = &target.secret {
-            writeln!(f, "secrets = [{:?}]", secret)?;
-        }
-
-        if let Some(ssh) = &target.ssh {
-            writeln!(f, "ssh = [{:?}]", ssh)?;
-        }
-
-        if let Some(tag) = &target.tag {
-            writeln!(f, "tags = [{:?}]", tag)?;
-        }
-
-        if let Some(target) = &target.target {
-            writeln!(f, "target = [{:?}]", target)?;
-        }
-
-        writeln!(f, "}}")?;
-    }
+    write_as_buildx_bake(&mut f, targets)?;
     f.flush()?;
-    if args.debug {
-        let data = fs::read_to_string(f.path())?;
-        eprintln!("{}", data);
-    }
     // TODO: pass data through BufWriter to STDIN with `-f-`
     command.arg("-f");
     command.arg(f.path());
 
-    let status = command.status()?;
-    let prefix = "command `docker buildx bake`";
-    match status.code() {
-        Some(0) => Ok(()),
-        Some(code) => Err(format!("{} failed with {}", prefix, code).into()),
-        None => Err(format!("{} terminated by signal", prefix).into()),
-    }
+    Ok(command.status()?)
 }
 
-#[derive(Parser, Debug)]
+fn parse_shell_commands(cmds: &[String]) -> Result<Vec<DockerBuildArgs>> {
+    let mut targets = Vec::with_capacity(cmds.len());
+    for cmd in cmds {
+        match shlex::split(cmd) {
+            None => return Err(format!("Typo in {cmd}").into()),
+            Some(words) => {
+                let parsed = DockerBuildArgs::try_parse_from(words).map_err(|e| {
+                    eprintln!("Could not parse {cmd}"); //fixme:drop exit and use ?
+                    e.exit() // NOTE: fn exit() -> !
+                });
+                if let Ok(build_args) = parsed {
+                    targets.push(build_args);
+                }
+            }
+        }
+    }
+    Ok(targets)
+}
+
+fn write_as_buildx_bake(f: &mut impl Write, targets: &[DockerBuildArgs]) -> Result<()> {
+    writeln!(f, "group \"default\" {{\n  targets = [")?;
+    for i in 1..=targets.len() {
+        writeln!(f, "    \"{i}\",")?;
+    }
+    writeln!(f, "  ]\n}}")?;
+    for (i, target) in targets.iter().enumerate() {
+        let (i, DockerBuild::Build(target)) = (i + 1, &target.build);
+        writeln!(f, "target \"{i}\" {{")?;
+
+        if !target.build_args.is_empty() {
+            writeln!(f, "  args = {{")?;
+            for arg in &target.build_args {
+                match arg.split_once('=') {
+                    Some((key, value)) => writeln!(f, "    {key:?} = {value:?}")?,
+                    None => return Err(format!("bad key=value: {arg:?}").into()),
+                }
+            }
+            writeln!(f, "  }}")?;
+        }
+
+        if let Some(cache_from) = &target.cache_from {
+            writeln!(f, "  cache-from = [{cache_from:?}]")?;
+        }
+
+        if let Some(cache_to) = &target.cache_to {
+            writeln!(f, "  cache-to = [{cache_to:?}]")?;
+        }
+
+        let context = &target.path_or_url;
+        writeln!(f, "  context = {context:?}")?;
+
+        if let Some(build_context) = &target.build_context {
+            writeln!(f, "  contexts = [{build_context:?}]")?;
+        }
+
+        if let Some(file) = &target.file {
+            writeln!(f, "  dockerfile = {file:?}")?;
+        }
+
+        if let Some(label) = &target.label {
+            writeln!(f, "  labels = [{label:?}]")?;
+        }
+
+        if target.no_cache {
+            writeln!(f, "  no-cache = true")?;
+        }
+
+        if let Some(no_cache_filter) = &target.no_cache_filter {
+            writeln!(f, "  no-cache-filter = [{no_cache_filter:?}]")?;
+        }
+
+        if let Some(output) = &target.output {
+            writeln!(f, "  output = [{output:?}]")?;
+        }
+
+        if let Some(platform) = &target.platform {
+            writeln!(f, "  platforms = [{platform:?}]")?;
+        }
+
+        if target.pull {
+            writeln!(f, "  pull = true")?;
+        }
+
+        if let Some(secret) = &target.secret {
+            writeln!(f, "  secrets = [{secret:?}]")?;
+        }
+
+        if let Some(ssh) = &target.ssh {
+            writeln!(f, "  ssh = [{ssh:?}]")?;
+        }
+
+        if let Some(tag) = &target.tag {
+            writeln!(f, "  tags = [{tag:?}]")?;
+        }
+
+        if let Some(target) = &target.target {
+            writeln!(f, "  target = [{target:?}]")?;
+        }
+
+        writeln!(f, "}}")?;
+    }
+    Ok(())
+}
+
+#[derive(Parser, Debug, Clone)]
 #[clap(name="docker", about = "Start a build", long_about=None)]
 // DockerBuildArgs correspond to `DOCKER_BUILDKIT=1 docker build --help`
 struct DockerBuildArgs {
@@ -203,7 +253,7 @@ struct DockerBuildArgs {
     build: DockerBuild,
 }
 
-#[derive(clap::Subcommand, Debug)]
+#[derive(clap::Subcommand, Debug, Clone)]
 enum DockerBuild {
     Build(BuildArgs),
 }
@@ -226,7 +276,7 @@ enum DockerBuild {
 // ssh
 // tags
 // target
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 struct BuildArgs {
     path_or_url: String, // context
 
