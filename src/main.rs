@@ -129,10 +129,7 @@ fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Result<ExitStatus> {
     }
     if args.pull {
         command.arg("--pull");
-    } //fixme: build this once then maybe clone
-
-    // command.arg("--metadata-file");
-    // command.arg("/home/pete/wefwefwef/buildxargs.git/meta.data");
+    }
 
     let mut f = NamedTempFile::new()?;
     write_as_buildx_bake(&mut f, targets)?;
