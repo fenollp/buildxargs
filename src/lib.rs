@@ -18,9 +18,7 @@ where
         return Ok(HashMap::new());
     }
     if maxdepth == 0 {
-        if let Err(e) = initial_attempt {
-            return Err(e);
-        }
+        initial_attempt?;
         unreachable!();
     }
 
