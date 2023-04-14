@@ -48,14 +48,14 @@ fn main() -> Result<()> {
         stdin()
             .lock()
             .lines()
-            .filter_map(|res| res.ok())
+            .filter_map(std::result::Result::ok)
             .filter(blanks)
             .collect()
     } else {
         let file = File::open(&args.file)?;
         BufReader::new(file)
             .lines()
-            .filter_map(|res| res.ok())
+            .filter_map(std::result::Result::ok)
             .filter(blanks)
             .collect()
     };

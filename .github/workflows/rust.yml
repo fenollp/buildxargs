@@ -12,7 +12,7 @@ jobs:
         profile: minimal
         toolchain: stable
 
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - uses: actions-rs/cargo@v1
       with:
@@ -71,7 +71,7 @@ jobs:
         profile: minimal
         toolchain: stable
     - run: rustup component add rustfmt
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - uses: actions-rs/cargo@v1
       with:
         command: fmt
@@ -87,11 +87,11 @@ jobs:
         profile: minimal
         toolchain: stable
     - run: rustup component add clippy
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - uses: actions-rs/cargo@v1
       with:
         command: fetch
     - uses: actions-rs/cargo@v1
       with:
         command: clippy
-        args: --offline --locked --frozen --all-targets --all-features -- -D warnings
+        args: --locked --frozen --offline --all-targets --all-features -- -D warnings --no-deps -W clippy::cast_lossless -W clippy::redundant_closure_for_method_calls -W clippy::str_to_string'
