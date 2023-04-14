@@ -1,6 +1,6 @@
 [package]
 name = "buildxargs"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2021"
 authors = ["Pierre Fenoll <pierrefenoll@gmail.com>"]
 description = "xargs for BuildKit with docker buildx bake"
@@ -12,5 +12,5 @@ repository = "https://github.com/fenollp/buildxargs"
 
 [dependencies]
 clap = { version = "4", features = ["derive", "color"] }
-tempfile = "3"
 shlex = "1"
+tempfile = "3"
