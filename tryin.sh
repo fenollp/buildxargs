@@ -1,5 +1,5 @@
 #!/bin/bash -eux
-# trash _target; shellcheck ./tryin.sh && ./tryin.sh && \tree _target
+# trash _target 2>/dev/null; shellcheck ./tryin.sh && ./tryin.sh ; \tree -h _target
 
 PROFILE=${PROFILE:-debug}
 CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}
@@ -79,33 +79,84 @@ rustc() {
 
 	local dockerfile
 	dockerfile=$(mktemp)
+	local backslash="\\"
 	cat <<EOF >"$dockerfile"
 # syntax=docker.io/docker/dockerfile:1@sha256:39b85bbfa7536a5feceb7372a0817649ecb2724562a38360f4d6a7782a409b14
 
-# rustc 1.68.2 (9eb3afe9e 2023-03-27)
-FROM --platform=\$BUILDPLATFORM docker.io/library/rust:1.68.2-slim@sha256:df4d8577fab8b65fabe9e7f792d6f4c57b637dd1c595f3f0a9398a9854e17094 AS rust
-
 FROM rust AS $crate_name$extra_filename-builder
 WORKDIR $out_dir
-COPY $input $input
+WORKDIR /
+RUN $backslash
+  --mount=type=bind,from=input--$(basename "${input%/src/lib.rs}"),target=${input%/src/lib.rs} $backslash
 EOF
 for extern in "${externs[@]}"; do
 	cat <<EOF >>"$dockerfile"
-COPY $extern $extern
+  --mount=type=bind,from=deps,source=${extern#"$CARGO_TARGET_DIR/$PROFILE/deps"},target=$extern $backslash
 EOF
 done
 
+# 	cat <<EOF >>"$dockerfile"
+#     set -ux $backslash
+#  && rustc ${args[@]} $input
+# EOF
+
+# 	cat <<EOF >>"$dockerfile"
+#     ["false"]
+# EOF
+
+	# printf '    ["rustc' >>"$dockerfile"
+	printf '    ["rustc"' >>"$dockerfile"
+	for arg in "${args[@]}"; do
+		# shellcheck disable=SC2001
+		arg=$(sed 's%"%\\"%g' <<<"$arg")
+		printf ', "%s"' "$arg" >>"$dockerfile"
+	done
+  # shellcheck disable=SC2129
+	printf ', "%s"]\n' "$input" >>"$dockerfile"
+
 	cat <<EOF >>"$dockerfile"
-RUN \
-    set -ux \
- && rustc ${args[@]} $input
-FROM scratch
-COPY --from=$crate_name$extra_filename-builder $out_dir/* /
+RUN set -eux && ls -lha $out_dir && ls -lha $out_dir/*$extra_filename.*
 EOF
-	echo ">>> " && cat "$dockerfile" ###########
-      # --build-context stringArray     Additional build contexts (e.g., name=path)
-	DOCKER_BUILDKIT=1 docker build --output="$out_dir" --file=- . <"$dockerfile"
+
+# 	cat <<EOF >>"$dockerfile"
+#     set -ux $backslash
+#  && echo $backslash
+# EOF
+# 	for arg in "${args[@]}"; do
+# 		# printf " '%s'" "$arg" >>"$dockerfile"
+# 		printf ' %s'   "$arg" >>"$dockerfile"
+# 	done
+#   # shellcheck disable=SC2129
+# 	# printf '&& exit 42' >>"$dockerfile" ####
+# 	echo "$backslash" >>"$dockerfile" ###
+# 	echo >>"$dockerfile"
+
+	cat <<EOF >>"$dockerfile"
+FROM scratch
+COPY --from=$crate_name$extra_filename-builder $out_dir/*$extra_filename.* /
+EOF
+
+	# echo ">>> " && cat "$dockerfile" ###########
+	local buildx=()
+	# buildx+=(--progress plain) ####
+	buildx+=(--output "$out_dir")
+# 0 0s buildxargs.git buildx λ input=/registry/src/github.com-1ecc6299db9ec823/libc-0.2.140/src/lib.rs; echo ${input%/src/lib.rs}
+# /registry/src/github.com-1ecc6299db9ec823/libc-0.2.140
+# 0 0s buildxargs.git buildx λ input=/registry/src/github.com-1ecc6299db9ec823/libc-0.2.140/src/lib.rs; basename "${input%/src/lib.rs}"
+# libc-0.2.140
+# 0 0s buildxargs.git buildx λ input=/registry/src/github.com-1ecc6299db9ec823/libc-0.2.140/src/lib.rs; dirname ${input%/src/lib.rs}
+# /registry/src/github.com-1ecc6299db9ec823
+	buildx+=(--build-context "input--$(basename "${input%/src/lib.rs}")=${input%/src/lib.rs}")
+	if [[ ${#externs[@]} -ne 0 ]]; then
+		buildx+=(--build-context deps="$CARGO_TARGET_DIR/$PROFILE/deps")
+	fi
+	buildx+=(--build-context rust=docker-image://docker.io/library/rust:1.68.2-slim@sha256:df4d8577fab8b65fabe9e7f792d6f4c57b637dd1c595f3f0a9398a9854e17094) # rustc 1.68.2 (9eb3afe9e 2023-03-27)
+	buildx+=(--file -)
+	buildx+=("$PWD")
+	DOCKER_BUILDKIT=1 docker buildx build "${buildx[@]}" <"$dockerfile"
 	rm "$dockerfile"
+
+	# ls -lha "$out_dir" && ls -lha "$out_dir"/*"$extra_filename".* #####
 }
 
 rustc --crate-name libc \
@@ -145,7 +196,7 @@ rustc --crate-name libc \
 # {"artifact":"$CARGO_TARGET_DIR/$PROFILE/deps/libc-9de7ca31dbbda4df.d","emit":"dep-info"}
 # {"artifact":"$CARGO_TARGET_DIR/$PROFILE/deps/liblibc-9de7ca31dbbda4df.rmeta","emit":"metadata"}
 # {"artifact":"$CARGO_TARGET_DIR/$PROFILE/deps/liblibc-9de7ca31dbbda4df.rlib","emit":"link"}
-ensure 4f3aa5134e2db0871e050d2916083f84ed02951067ae55137b5df83375edcd13
+# ensure 4f3aa5134e2db0871e050d2916083f84ed02951067ae55137b5df83375edcd13
 
 rustc --crate-name io_lifetimes \
 	--edition=2018 \
