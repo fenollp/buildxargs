@@ -14,39 +14,98 @@ mkdir -p "$CARGO_TARGET_DIR/$PROFILE/deps"
 
 ensure() {
 	h=$(tar -cf- --directory="$PWD" --sort=name --mtime='UTC 2023-04-15' --group=0 --owner=0 --numeric-owner "$(basename "$CARGO_TARGET_DIR")" | sha256sum)
-	[[ "$h" = "$1  -" ]]
+	[[ "$h" == "$1  -" ]]
 }
 
 rustc() {
 	local args=()
-	local src
+
+	local input=''
+	local crate_name=''
+	local externs=()
+	local extra_filename=''
+	local out_dir=''
+
 	local key=''; local val=''; local pair=''
 	for arg in "$@"; do
 		case "$pair" in
-			'' ) pair=S; key=$arg; [[ "$arg" = '--crate-name' ]] || exit 4 ;;
+			'' ) pair=S; key=$arg; [[ "$arg" == '--crate-name' ]] || return 4; continue ;;
 			'E') pair=S; key=$arg; val=''   ;; # start
 			'S') pair=E;           val=$arg ;; # end
 		esac
-		if [[ "$pair $val" = 'S ' ]] && [[ "$arg" =~ --.+=.+ ]]; then
+		if [[ "$pair $val" == 'S ' ]] && [[ "$arg" =~ ^--.+=.+ ]]; then
 			pair=E; key=${arg%=*}; val=${arg#*=}
 		fi
-		if [[ "${key:0:1}" = '/' ]]; then
-			src=$key
+
+		if [[ "${key:0:1}" == '/' ]]; then
+			[[ "$input" != '' ]] && return 4
+			input=$key
 			pair=E; key=''; val=''
 			continue
 		fi
 
-		if [[ "$key $val" = '-C link-arg=-fuse-ld=/usr/local/bin/mold' ]]; then
+		if [[ "$key $val" == '-C link-arg=-fuse-ld=/usr/local/bin/mold' ]]; then
 			pair=E; key=''; val=''
 			continue
 		fi
 
-		[[ -z "$val" ]] && continue
+		[[ "$val" == '' ]] && continue
+
+		if [[ "$key" == '--crate-name' ]]; then
+			[[ "$crate_name" != '' ]] && return 4
+			crate_name=$val
+		fi
+
+		if [[ "$key" == '--extern' ]]; then
+			externs+=("${val#*=}")
+		fi
+
+		if [[ "$key $val" =~ ^-C.extra-filename= ]]; then
+			[[ "$extra_filename" != '' ]] && return 4
+			extra_filename=${val#extra-filename=}
+		fi
+
+		if [[ "$key" == '--out-dir' ]]; then
+			[[ "$out_dir" != '' ]] && return 4
+			out_dir=$val
+		fi
+
 		args+=("$key" "$val")
 	done
 
-	[[ -z "${src:-}" ]] && exit 4
-	/home/pete/.cargo/bin/rustc "${args[@]}" "$src"
+	[[ "${input:-}" == '' ]] && return 4
+
+	# /home/pete/.cargo/bin/rustc "${args[@]}" "$input"
+
+	local dockerfile
+	dockerfile=$(mktemp)
+	cat <<EOF >"$dockerfile"
+# syntax=docker.io/docker/dockerfile:1@sha256:39b85bbfa7536a5feceb7372a0817649ecb2724562a38360f4d6a7782a409b14
+
+# rustc 1.68.2 (9eb3afe9e 2023-03-27)
+FROM --platform=\$BUILDPLATFORM docker.io/library/rust:1.68.2-slim@sha256:df4d8577fab8b65fabe9e7f792d6f4c57b637dd1c595f3f0a9398a9854e17094 AS rust
+
+FROM rust AS $crate_name$extra_filename-builder
+WORKDIR $out_dir
+COPY $input $input
+EOF
+for extern in "${externs[@]}"; do
+	cat <<EOF >>"$dockerfile"
+COPY $extern $extern
+EOF
+done
+
+	cat <<EOF >>"$dockerfile"
+RUN \
+    set -ux \
+ && rustc ${args[@]} $input
+FROM scratch
+COPY --from=$crate_name$extra_filename-builder $out_dir/* /
+EOF
+	echo ">>> " && cat "$dockerfile" ###########
+      # --build-context stringArray     Additional build contexts (e.g., name=path)
+	DOCKER_BUILDKIT=1 docker build --output="$out_dir" --file=- . <"$dockerfile"
+	rm "$dockerfile"
 }
 
 rustc --crate-name libc \
