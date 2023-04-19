@@ -33,6 +33,8 @@ USAGE:
     buildxargs [OPTIONS]
 
 OPTIONS:
+        --attach
+        --background
         --debug                  Print more things
     -f, --file <FILE>            Read commands from file [default: -]
     -h, --help                   Print help information
