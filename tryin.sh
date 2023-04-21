@@ -15,7 +15,7 @@ mkdir -p "$CARGO_TARGET_DIR/$PROFILE/deps"
 ensure() {
 	local hash=$1; shift
 	local dir=${1:-$(basename "$CARGO_TARGET_DIR")}
-	h=$(tar -cf- --directory="$PWD" --sort=name --mtime='UTC 2023-04-15' --group=0 --owner=0 --numeric-owner "$dir" | sha256sum)
+	h=$(tar -cf- --directory="$PWD" --sort=name --mtime='UTC 2023-04-15' --group=0 --owner=0 --numeric-owner "$dir" 2>/dev/null | sha256sum)
 	[[ "$h" == "$hash  -" ]]
 }
 
@@ -26,6 +26,7 @@ rustc() {
 	local crate_type=''
 	local externs=()
 	local extra_filename=''
+	local incremental=''
 	local input=''
 	local out_dir=''
 
@@ -44,23 +45,30 @@ rustc() {
 			[[ "$input" != '' ]] && return 4
 			input=$key
 			pair=E; key=''; val=''
+			continue ;;
+		esac
+
+		if [[ "$pair $key $val" == 'S --test ' ]]; then
+			[[ "$crate_type" != '' ]] && return 4
+			crate_type='test' # Not a real `--crate-type`
+			pair=E; key=''; val=''
 			continue
-		;; esac
+		fi
 
 		# FIXME: revert
+		case "$key $val" in
 		# strips out local config for now
-		if [[ "$key $val" == '-C link-arg=-fuse-ld=/usr/local/bin/mold' ]]; then
+		'-C link-arg=-fuse-ld=/usr/local/bin/mold')
 			pair=E; key=''; val=''
-			continue
-		fi
-		if [[ "$key $val" == '-C linker=/usr/bin/clang' ]]; then
+			continue ;;
+		'-C linker=/usr/bin/clang')
 			pair=E; key=''; val=''
-			continue
-		fi
+			continue ;;
 		# remove coloring in output for readability during debug
-		if [[ "$key $val" == '--json diagnostic-rendered-ansi,artifacts,future-incompat' ]]; then
+		'--json diagnostic-rendered-ansi,artifacts,future-incompat')
 			val='artifacts,future-incompat'
-		fi
+			;;
+		esac
 
 		[[ "$val" == '' ]] && continue
 
@@ -69,31 +77,39 @@ rustc() {
 			extra_filename=${val#extra-filename=}
 		fi
 
+		if [[ "$key $val" =~ ^-C.incremental= ]]; then
+			[[ "$incremental" != '' ]] && return 4
+			incremental=${val#incremental=}
+		fi
+
 		if [[ "$key $val" =~ ^--cfg.feature=[^\"] ]]; then
 			val="feature=\"${val#feature=}\""
 		fi
 
-		if [[ "$key" == '--crate-name' ]]; then
+		case "$key" in
+		'--crate-name')
 			[[ "$crate_name" != '' ]] && return 4
 			crate_name=$val
-		fi
+			;;
 
-		if [[ "$key" == '--crate-type' ]]; then
+		'--crate-type')
 			[[ "$crate_type" != '' ]] && return 4
+			case "$val" in bin|lib|proc-macro) ;; *) return 4;; esac
 			crate_type=$val
-		fi
+			;;
 
-		if [[ "$key" == '--extern' ]]; then
+		'--extern')
 			# Crates that are part of Rust standard
 			# See for instance: https://doc.rust-lang.org/proc_macro
 			case "$val" in alloc|core|proc_macro|std|test) continue ;; esac
 			externs+=("${val#*=}")
-		fi
+			;;
 
-		if [[ "$key" == '--out-dir' ]]; then
+		'--out-dir')
 			[[ "$out_dir" != '' ]] && return 4
 			out_dir=$val
-		fi
+			;;
+		esac
 
 		args+=("$key" "$val")
 	done
@@ -101,6 +117,7 @@ rustc() {
 	[[ "$crate_name" == '' ]] && return 4
 	[[ "$crate_type" == '' ]] && return 4
 	[[ "$extra_filename" == '' ]] && return 4
+	# [[ "$incremental" == '' ]] && return 4 MAY be unset: only set on last calls
 	[[ "$input" == '' ]] && return 4
 	[[ "$out_dir" == '' ]] && return 4
 
@@ -129,7 +146,7 @@ rustc() {
 	# 	--extern proc_macro2="$CARGO_TARGET_DIR/$PROFILE"/deps/libproc_macro2-ef119f7eb3ef5720.rmeta \
 	# 	--cap-lints allow \
 	# 	-C link-arg=-fuse-ld=/usr/local/bin/mold
-	case "$crate_name" in # TODO: full_crate_id=$crate_type-$crate_name-$crate_version$extra_filename
+	case "$crate_name" in # TODO: match full_crate_id
 	'quote')
 		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libunicode_ident-417636671c982ef8.rmeta)
 		;;
@@ -224,9 +241,13 @@ rustc() {
 	esac
 
 	mkdir -p "$out_dir"
+	[[ "$incremental" != '' ]] && mkdir -p "$incremental"
 
 	# # shellcheck disable=SC2093
 	# exec /home/pete/.cargo/bin/rustc "${args[@]}" "$input"
+
+	local full_crate_id
+	full_crate_id=$crate_type-$crate_name$extra_filename # FIXME? missing version
 
 	# λ input=/registry/src/github.com-1ecc6299db9ec823/libc-0.2.140/src/lib.rs; echo ${input%/src/lib.rs}
 	# /registry/src/github.com-1ecc6299db9ec823/libc-0.2.140
@@ -236,17 +257,22 @@ rustc() {
 	# /registry/src/github.com-1ecc6299db9ec823
 	#
 	# "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/io-lifetimes-1.0.3/build.rs \
-	local input_mount_name input_mount_target stage_name # TODO: use full_crate_id in stage_name
+	local input_mount_name input_mount_target stage_name
 	case "$input" in
 	*/build.rs)
 		input_mount_name=input_build_rs--$(basename "${input%/build.rs}")
 		input_mount_target=${input%/build.rs}
-		stage_name=build_rs-$(basename "$out_dir")-builder
+		stage_name=build_rs-$full_crate_id-builder
 		;;
 	*/src/lib.rs)
 		input_mount_name=input_src_lib_rs--$(basename "${input%/src/lib.rs}")
 		input_mount_target=${input%/src/lib.rs}
-		stage_name=src_lib_rs-$crate_name$extra_filename-builder
+		stage_name=src_lib_rs-$full_crate_id-builder
+		;;
+	src/lib.rs)
+		input_mount_name=input_src_lib_rs--$full_crate_id
+		input_mount_target=$PWD/src # TODO? this may be too restricted
+		stage_name=src_lib_rs-$full_crate_id-builder
 		;;
 	*) return 4 ;;
 	esac
@@ -255,13 +281,22 @@ rustc() {
 
 	local dockerfile
 	dockerfile=$(mktemp)
+	local output
+	output=$(mktemp -d)
 	local backslash="\\"
 	cat <<EOF >"$dockerfile"
 # syntax=docker.io/docker/dockerfile:1@sha256:39b85bbfa7536a5feceb7372a0817649ecb2724562a38360f4d6a7782a409b14
 
 FROM rust AS $stage_name
 WORKDIR $out_dir
-WORKDIR /
+EOF
+	if [[ "$incremental" != '' ]]; then
+		cat <<EOF >>"$dockerfile"
+WORKDIR $incremental
+EOF
+	fi
+	cat <<EOF >>"$dockerfile"
+WORKDIR $PWD
 RUN $backslash
   --mount=type=bind,from=$input_mount_name,target=$input_mount_target $backslash
 EOF
@@ -274,41 +309,28 @@ done
 	printf '    ["rustc"' >>"$dockerfile"
 	for arg in "${args[@]}"; do
 		# shellcheck disable=SC2001
-		arg=$(sed 's%"%\\"%g' <<<"$arg")
+		arg=$(sed 's%"%\\"%g' <<<"$arg") #TODO: add backslashes when parsing args
 		printf ', "%s"' "$arg" >>"$dockerfile"
 	done
   # shellcheck disable=SC2129
 	printf ', "%s"]\n' "$input" >>"$dockerfile"
 
-######
-	cat <<EOF >>"$dockerfile"
-RUN set -eux && ls -lha $out_dir && ls -lha $out_dir/*$extra_filename.*
-EOF
-
-# 	cat <<EOF >>"$dockerfile"
-#     set -ux $backslash
-#  && echo $backslash
-# EOF
-# 	for arg in "${args[@]}"; do
-# 		# printf " '%s'" "$arg" >>"$dockerfile"
-# 		printf ' %s'   "$arg" >>"$dockerfile"
-# 	done
-#   # shellcheck disable=SC2129
-# 	# printf '&& exit 42' >>"$dockerfile" ####
-# 	echo "$backslash" >>"$dockerfile" ###
-# 	echo >>"$dockerfile"
-
 	cat <<EOF >>"$dockerfile"
 FROM scratch
-COPY --from=$stage_name $out_dir/*$extra_filename.* /
+COPY --from=$stage_name $out_dir/*$extra_filename.* /out/
 EOF
+	if [[ "$incremental" != '' ]]; then
+		cat <<EOF >>"$dockerfile"
+COPY --from=$stage_name $incremental /incremental/
+EOF
+	fi
 
 	echo ">>>" /home/pete/.cargo/bin/rustc "${args[@]}" "$input" ############
 	echo ">>> " && cat "$dockerfile" ###########
 	local buildx=()
-	# buildx+=(--progress plain) ####
+	buildx+=(--progress plain) ###
 	buildx+=(--network none)
-	buildx+=(--output "$out_dir")
+	buildx+=(--output "$output") # TODO: instead of 2 out dirs out/ and incremental/, do two calls to docker, changing --output and using merging of outputs (doesn't exist yet https://github.com/moby/buildkit/issues/1224) (2 scratch targets with buildxargs)
 	buildx+=(--build-context "$input_mount_name=$input_mount_target")
 	if [[ ${#externs[@]} -ne 0 ]]; then
 		# TODO: only mount the required files, not the whole deps directory (to maximize cache hits and minimize context sizes)
@@ -319,8 +341,13 @@ EOF
 	buildx+=("$PWD")
 	DOCKER_BUILDKIT=1 docker buildx build "${buildx[@]}" <"$dockerfile"
 	rm "$dockerfile"
-
-	# ls -lha "$out_dir" && ls -lha "$out_dir"/*"$extra_filename".* #####
+	mv "$output"/out/* "$out_dir"
+	rmdir "$output"/out
+	if [[ "$incremental" != '' ]]; then
+		mv "$output"/incremental/* "$incremental"
+		rmdir "$output"/incremental
+	fi
+	rmdir "$output"
 }
 
 rustc --crate-name build_script_build --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/io-lifetimes-1.0.3/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="close" --cfg feature="default" --cfg feature="libc" --cfg feature="windows-sys" -C metadata=5fc4d6e9dda15f11 -C extra-filename=-5fc4d6e9dda15f11 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/build/io-lifetimes-5fc4d6e9dda15f11 -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
@@ -330,65 +357,65 @@ ensure 80797dd3312ac66c489526c7fd01fee60477b88776dc43441f1451393219e40c "$CARGO_
 rustc --crate-name build_script_build --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/rustix-0.37.6/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="default" --cfg feature="fs" --cfg feature="io-lifetimes" --cfg feature="libc" --cfg feature="std" --cfg feature="termios" --cfg feature="use-libc-auxv" -C metadata=2a01a00f5bdd1924 -C extra-filename=-2a01a00f5bdd1924 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/build/rustix-2a01a00f5bdd1924 -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
 ensure a3bab1bf7d3fb790d3a6e995dbaa15e9ee26cb90942c7245cb1c19b21112d626 "$CARGO_TARGET_DIR/$PROFILE"/build/rustix-2a01a00f5bdd1924
 rustc --crate-name bitflags --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/bitflags-1.3.2/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="default" -C metadata=f255a966af175049 -C extra-filename=-f255a966af175049 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 16e56bbe6cb6d9bc30076df06a3d45b5c35854e733bbfac8cbc66661f818350d "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 8663ccfb69487ac1594fb52a3d1083489a7c161f674fba1cbbdde0284288ae71 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name linux_raw_sys --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/linux-raw-sys-0.3.1/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="errno" --cfg feature="general" --cfg feature="ioctl" --cfg feature="no_std" -C metadata=67b8335e06167307 -C extra-filename=-67b8335e06167307 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 9bfe95815a5ae50a0fb0491b771be3c26847bed8b555c854031079c48ec68f5b "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure febac1d2841ecb1a329f56925ac841aed0e31ccf2a47e5141c13c053f090eb61 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name build_script_build --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/proc-macro2-1.0.56/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="default" --cfg feature="proc-macro" -C metadata=349a49cf19c07c83 -C extra-filename=-349a49cf19c07c83 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/build/proc-macro2-349a49cf19c07c83 -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
 ensure ac18dfc0c8c37cd25536fb9c571f0885cc18ca0d26c6d067bd4dd04cd95efa17 "$CARGO_TARGET_DIR/$PROFILE"/build/proc-macro2-349a49cf19c07c83
 rustc --crate-name unicode_ident --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/unicode-ident-1.0.5/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 -C metadata=417636671c982ef8 -C extra-filename=-417636671c982ef8 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure fc70ed028407b36da305610ad84394565b69d777ed1d15f78063b5a6583d4af3 "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 63debee9e52e3f92c21060c264b7cfa277623245d4312595b76a05ae7de9fe18 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name build_script_build --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/quote-1.0.26/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="default" --cfg feature="proc-macro" -C metadata=de6232726d2cb6c6 -C extra-filename=-de6232726d2cb6c6 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/build/quote-de6232726d2cb6c6 -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
 ensure 3ef3f9596e194352323833a856c9f1481368be4b59939b01e2ce1e2507c39d7b "$CARGO_TARGET_DIR/$PROFILE"/build/quote-de6232726d2cb6c6
 rustc --crate-name utf8parse --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/utf8parse-0.2.1/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="default" -C metadata=951ca9bdc6d60a50 -C extra-filename=-951ca9bdc6d60a50 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 88a8a6d39ae52005e959377c1c94cd03d35c9491bf16f9a30313c9ddf0096a0b "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 3a9d88dcc4808ec4a6613fca714f98cc0cefc96a4b81ed9007e7e6f3ab19e446 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name anstyle --edition=2021 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/anstyle-0.3.5/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="default" --cfg feature="std" -C metadata=3d9b242388653423 -C extra-filename=-3d9b242388653423 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 25200ca73ed894e3b64c4a67e2984056ad9383406c44b5b6cc5d0f85b148a806 "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 515ebdbaea4523d75db0f98b38fa07c353834c6af3fdfdd1fce1f76157dccb41 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name anstyle_parse --edition=2021 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/anstyle-parse-0.1.1/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="default" --cfg feature="utf8" -C metadata=0d4af9095c79189b -C extra-filename=-0d4af9095c79189b --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern utf8parse="$CARGO_TARGET_DIR/$PROFILE"/deps/libutf8parse-951ca9bdc6d60a50.rmeta --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 91b23180e446b61f0c96dd36eae07ec762f4ea65458016aa7af6b65cc61ae6b5 "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 59c82c7d16960ea23be7db27c69d632a54a1faa9def5f7bf4b9e631f5e8b5025 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name concolor_override --edition=2021 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/concolor-override-1.0.0/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 -C metadata=305fddcda33650f6 -C extra-filename=-305fddcda33650f6 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 77805ce757bc74a68e63d243ccdfbaf15cbde1080869b3494a103bd395842a68 "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 242e5eefd61963ac190559f7061228a18a5e1820f75062354d6c3aac7adb9c8d "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name concolor_query --edition=2021 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/concolor-query-0.3.3/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 -C metadata=74e38d373bc944a9 -C extra-filename=-74e38d373bc944a9 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure aa39f03fd8ed6c17846efd8821ff6a9bf7fe8fd76e6d1aa9e9e0231d9241472f "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 80b4cf0c70fba99090291a5a9f18996b89d7c48d34fe47a7b7654260f9061d93 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name strsim "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/strsim-0.10.0/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 -C metadata=8ed1051e7e58e636 -C extra-filename=-8ed1051e7e58e636 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure dbe2dec0d66fba24f686e93feb613628f23ef23f8458e339b3db76409d9ef68f "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 7d0ab51edc54d1fba6562eba15c2d50b006d8b1d26c7caaa4835ca842b32e6bd "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name clap_lex --edition=2021 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/clap_lex-0.4.1/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 -C metadata=7dfc2f58447e727e -C extra-filename=-7dfc2f58447e727e --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure fd0294d0f75fea1b28d8c026043210c6d5d20f069d9ab84e6d47f7e673a8cb5a "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 102ebf5186bfb97efed2644993b22c8eba60f758a24f8ca0795da74196afb3d5 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name heck --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/heck-0.4.0/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="default" -C metadata=cd1cdbedec0a6dc0 -C extra-filename=-cd1cdbedec0a6dc0 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 9cc782096a0bcb7d14965c0d0a5fdd994ace441d3550c845003c8cd966c28a29 "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure fc9fd4659e849560714e36514cfc6024d3ba3bf9356806479aaeb46417f24b06 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name proc_macro2 --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/proc-macro2-1.0.56/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="default" --cfg feature="proc-macro" -C metadata=ef119f7eb3ef5720 -C extra-filename=-ef119f7eb3ef5720 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern unicode_ident="$CARGO_TARGET_DIR/$PROFILE"/deps/libunicode_ident-417636671c982ef8.rmeta --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold --cfg use_proc_macro --cfg wrap_proc_macro
-ensure b6ae1fc65dea5473eb3985fbc05e2a375129ad46bdbce2ddda3cbd442a9695e8 "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure b7382060b42396c1cef74ce8573fffb7bc13cb4ad97d07c0aa3e6367275135a7 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name libc "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/libc-0.2.140/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="default" --cfg feature="extra_traits" --cfg feature="std" -C metadata=9de7ca31dbbda4df -C extra-filename=-9de7ca31dbbda4df --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold --cfg freebsd11 --cfg libc_priv_mod_use --cfg libc_union --cfg libc_const_size_of --cfg libc_align --cfg libc_int128 --cfg libc_core_cvoid --cfg libc_packedN --cfg libc_cfg_target_vendor --cfg libc_non_exhaustive --cfg libc_long_array --cfg libc_ptr_addr_of --cfg libc_underscore_const_names --cfg libc_const_extern_fn
-ensure 2fc6edcdb6cd76b102b02697f535dc5ea6fb5cb0a540d90e7e1407a18e8f5c4e "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure aca31b437a30b41437831eb55833d4a603cd17b1bf14bf61c22fd597cc85f591 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name once_cell --edition=2021 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/once_cell-1.15.0/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="alloc" --cfg feature="default" --cfg feature="race" --cfg feature="std" -C metadata=da1c67e98ff0d3df -C extra-filename=-da1c67e98ff0d3df --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 33c86a8d515fe7f7045cdcec43fd23d4afc6496fcf3acf46f1afc5947071f10a "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 681724646da3eeff1fc4eac763657069367f2eca3063541d6210267af9516c8b "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name fastrand --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/fastrand-1.8.0/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 -C metadata=f39af6f065361be9 -C extra-filename=-f39af6f065361be9 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 9dad41506048092cff6b81f1225a5d8897adc61be6acee86310f1ef48ed3e88d "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure a96b56af7d56ecc76ba33d69c403e79d35ad219f4cf33534c7de79dcd869a418 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name shlex "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/shlex-1.1.0/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="default" --cfg feature="std" -C metadata=df9eb4fba8dd532e -C extra-filename=-df9eb4fba8dd532e --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 1e622ac5e57598a8b2ad85c5257136d37e2d1297f82b7449ae26611b5ef851b2 "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 8e7d662c23280112c77833c899c60295549f40cef9c30d44fa3ee5f2cae9c70c "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name cfg_if --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/cfg-if-1.0.0/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 -C metadata=305ff6ac5e1cfc5a -C extra-filename=-305ff6ac5e1cfc5a --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 2b7c86c37c8a3695ded552b4c21a76c6d77c35d59c126af693457b75a3d329f6 "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 5b338fbcc1fa1566b2700d106204b426c2914d8ae9dd73a6caa8b54600940acb "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name quote --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/quote-1.0.26/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="default" --cfg feature="proc-macro" -C metadata=74434efe692a445d -C extra-filename=-74434efe692a445d --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern proc_macro2="$CARGO_TARGET_DIR/$PROFILE"/deps/libproc_macro2-ef119f7eb3ef5720.rmeta --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure a0e9898054aa1b464cd632ff001c2c6b12cece69469763bbbca0e1d971f33780 "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure ddb97c0389c55493bea292d9853dcada9d9f4207dbe7bad52d217b086e3706bc "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name syn --edition=2021 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/syn-2.0.13/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="clone-impls" --cfg feature="default" --cfg feature="derive" --cfg feature="full" --cfg feature="parsing" --cfg feature="printing" --cfg feature="proc-macro" --cfg feature="quote" -C metadata=4befa7538c9a9f80 -C extra-filename=-4befa7538c9a9f80 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern proc_macro2="$CARGO_TARGET_DIR/$PROFILE"/deps/libproc_macro2-ef119f7eb3ef5720.rmeta --extern quote="$CARGO_TARGET_DIR/$PROFILE"/deps/libquote-74434efe692a445d.rmeta --extern unicode_ident="$CARGO_TARGET_DIR/$PROFILE"/deps/libunicode_ident-417636671c982ef8.rmeta --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 88413663be82765650e321d999539c8aa05e1e940083a0dfb63cb71e471d6e11 "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 935c4792b4e7e86fae13917aebbdccbf3a05c26856f5b09dcfa5386bd52bde6e "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name io_lifetimes --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/io-lifetimes-1.0.3/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="close" --cfg feature="default" --cfg feature="libc" --cfg feature="windows-sys" -C metadata=36f41602071771e6 -C extra-filename=-36f41602071771e6 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern libc="$CARGO_TARGET_DIR/$PROFILE"/deps/liblibc-9de7ca31dbbda4df.rmeta --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold --cfg io_safety_is_in_std --cfg panic_in_const_fn
-ensure ce834a2f03218f1fbaba78df421a105650c49131c9de27c9e2fc6cea109424d3 "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 112d5c4bc459c38843f5ce37369ce675069018518aa5fa458664e1b535ed21e5 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name rustix --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/rustix-0.37.6/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="default" --cfg feature="fs" --cfg feature="io-lifetimes" --cfg feature="libc" --cfg feature="std" --cfg feature="termios" --cfg feature="use-libc-auxv" -C metadata=120609be99d53c6b -C extra-filename=-120609be99d53c6b --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern bitflags="$CARGO_TARGET_DIR/$PROFILE"/deps/libbitflags-f255a966af175049.rmeta --extern io_lifetimes="$CARGO_TARGET_DIR/$PROFILE"/deps/libio_lifetimes-36f41602071771e6.rmeta --extern libc="$CARGO_TARGET_DIR/$PROFILE"/deps/liblibc-9de7ca31dbbda4df.rmeta --extern linux_raw_sys="$CARGO_TARGET_DIR/$PROFILE"/deps/liblinux_raw_sys-67b8335e06167307.rmeta --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold --cfg linux_raw --cfg asm --cfg linux_like
-ensure e51d9806788596a834f41c0675904b43295d56c9451c210ba5a2baa218e67a4e "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 9bb7a1fc562b237a662b413a3d21e79bce55a868b4349ff12539c6820bbf3824 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name tempfile --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/tempfile-3.5.0/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 -C metadata=018ce729f986d26d -C extra-filename=-018ce729f986d26d --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern cfg_if="$CARGO_TARGET_DIR/$PROFILE"/deps/libcfg_if-305ff6ac5e1cfc5a.rmeta --extern fastrand="$CARGO_TARGET_DIR/$PROFILE"/deps/libfastrand-f39af6f065361be9.rmeta --extern rustix="$CARGO_TARGET_DIR/$PROFILE"/deps/librustix-120609be99d53c6b.rmeta --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 4f50e49fc68fe4a34aeaa82080dc1dace2f73f7a3822317ef035c15b0b0d919b "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 7e07d230803dec87e97701ec18626446659c84cd451986d727c83844520fc7f8 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name is_terminal --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/is-terminal-0.4.7/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 -C metadata=4b94fef286899229 -C extra-filename=-4b94fef286899229 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern io_lifetimes="$CARGO_TARGET_DIR/$PROFILE"/deps/libio_lifetimes-36f41602071771e6.rmeta --extern rustix="$CARGO_TARGET_DIR/$PROFILE"/deps/librustix-120609be99d53c6b.rmeta --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 33bfef6466af72a6e28346b6dd21f57d650842f2c3eaf4de1ef81b7e9c73d318 "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 15bdbb8397e2cbcd7a1df2589fc4f1bc1c53dbe0bee28d5bd86a99e003ce72b5 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name anstream --edition=2021 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/anstream-0.2.6/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="auto" --cfg feature="default" --cfg feature="wincon" -C metadata=47e0535dab3ef0d2 -C extra-filename=-47e0535dab3ef0d2 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern anstyle="$CARGO_TARGET_DIR/$PROFILE"/deps/libanstyle-3d9b242388653423.rmeta --extern anstyle_parse="$CARGO_TARGET_DIR/$PROFILE"/deps/libanstyle_parse-0d4af9095c79189b.rmeta --extern concolor_override="$CARGO_TARGET_DIR/$PROFILE"/deps/libconcolor_override-305fddcda33650f6.rmeta --extern concolor_query="$CARGO_TARGET_DIR/$PROFILE"/deps/libconcolor_query-74e38d373bc944a9.rmeta --extern is_terminal="$CARGO_TARGET_DIR/$PROFILE"/deps/libis_terminal-4b94fef286899229.rmeta --extern utf8parse="$CARGO_TARGET_DIR/$PROFILE"/deps/libutf8parse-951ca9bdc6d60a50.rmeta --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure deffa5c5f2e7b36761f2cf0090ee1848626ce38d15e9e23228ec452b464dad4d "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure fe77f7f8efbf78a44e9e2dc25b2b2af3823a48cb22b200c29300ddc38a701abc "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name clap_builder --edition=2021 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/clap_builder-4.2.1/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="color" --cfg feature="error-context" --cfg feature="help" --cfg feature="std" --cfg feature="suggestions" --cfg feature="usage" -C metadata=02591a0046469edd -C extra-filename=-02591a0046469edd --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern anstream="$CARGO_TARGET_DIR/$PROFILE"/deps/libanstream-47e0535dab3ef0d2.rmeta --extern anstyle="$CARGO_TARGET_DIR/$PROFILE"/deps/libanstyle-3d9b242388653423.rmeta --extern bitflags="$CARGO_TARGET_DIR/$PROFILE"/deps/libbitflags-f255a966af175049.rmeta --extern clap_lex="$CARGO_TARGET_DIR/$PROFILE"/deps/libclap_lex-7dfc2f58447e727e.rmeta --extern strsim="$CARGO_TARGET_DIR/$PROFILE"/deps/libstrsim-8ed1051e7e58e636.rmeta --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 62be8b156c9463f52793bcc2beb3d380ee01b174bbb239891e812288bedc56b4 "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure abc761d7e43bb11db79e0823f549a1942df01d89bfa782b26fe06073c8948156 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name clap_derive --edition=2021 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/clap_derive-4.2.0/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type proc-macro --emit=dep-info,link -C prefer-dynamic -C embed-bitcode=no -C debuginfo=2 --cfg feature="default" -C metadata=a4ff03e749cd3808 -C extra-filename=-a4ff03e749cd3808 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern heck="$CARGO_TARGET_DIR/$PROFILE"/deps/libheck-cd1cdbedec0a6dc0.rlib --extern proc_macro2="$CARGO_TARGET_DIR/$PROFILE"/deps/libproc_macro2-ef119f7eb3ef5720.rlib --extern quote="$CARGO_TARGET_DIR/$PROFILE"/deps/libquote-74434efe692a445d.rlib --extern syn="$CARGO_TARGET_DIR/$PROFILE"/deps/libsyn-4befa7538c9a9f80.rlib --extern proc_macro --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure b83c77e2d2fb3cf4496b2c0a54cc6f1b60be3f13ecd76533f89eddb6b2d2ecd2 "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure f5e51647aa7f63210277423b50332fe3c3e0a018e10554a472b13402591b4ec1 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name clap --edition=2021 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/clap-4.2.1/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="color" --cfg feature="default" --cfg feature="derive" --cfg feature="error-context" --cfg feature="help" --cfg feature="std" --cfg feature="suggestions" --cfg feature="usage" -C metadata=8996e440435cdc93 -C extra-filename=-8996e440435cdc93 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern clap_builder="$CARGO_TARGET_DIR/$PROFILE"/deps/libclap_builder-02591a0046469edd.rmeta --extern clap_derive="$CARGO_TARGET_DIR/$PROFILE"/deps/libclap_derive-a4ff03e749cd3808.so --extern once_cell="$CARGO_TARGET_DIR/$PROFILE"/deps/libonce_cell-da1c67e98ff0d3df.rmeta --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 124f13ec13757419921712d20a2f8a909fa892d781ea5dac04d9923d1e6b1d8e "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure ce6e368345e52f1d35c56552efac510ef2c7610738e3af297b54098db62ab537 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name buildxargs --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 -C metadata=1052b4790952332f -C extra-filename=-1052b4790952332f --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -C incremental="$CARGO_TARGET_DIR/$PROFILE"/incremental -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern clap="$CARGO_TARGET_DIR/$PROFILE"/deps/libclap-8996e440435cdc93.rmeta --extern shlex="$CARGO_TARGET_DIR/$PROFILE"/deps/libshlex-df9eb4fba8dd532e.rmeta --extern tempfile="$CARGO_TARGET_DIR/$PROFILE"/deps/libtempfile-018ce729f986d26d.rmeta -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 42 "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure c68b91d305505ea79d63b8243c0a23d4356fe01e7fb8514d4b5b1b283d9f57ba "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name buildxargs --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --test -C metadata=4248d2626f765b01 -C extra-filename=-4248d2626f765b01 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -C incremental="$CARGO_TARGET_DIR/$PROFILE"/incremental -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern clap="$CARGO_TARGET_DIR/$PROFILE"/deps/libclap-8996e440435cdc93.rlib --extern shlex="$CARGO_TARGET_DIR/$PROFILE"/deps/libshlex-df9eb4fba8dd532e.rlib --extern tempfile="$CARGO_TARGET_DIR/$PROFILE"/deps/libtempfile-018ce729f986d26d.rlib -C link-arg=-fuse-ld=/usr/local/bin/mold
 ensure 42 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name buildxargs --edition=2021 src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --test -C metadata=9b4fb3065c88e032 -C extra-filename=-9b4fb3065c88e032 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -C incremental="$CARGO_TARGET_DIR/$PROFILE"/incremental -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern buildxargs="$CARGO_TARGET_DIR/$PROFILE"/deps/libbuildxargs-1052b4790952332f.rlib --extern clap="$CARGO_TARGET_DIR/$PROFILE"/deps/libclap-8996e440435cdc93.rlib --extern shlex="$CARGO_TARGET_DIR/$PROFILE"/deps/libshlex-df9eb4fba8dd532e.rlib --extern tempfile="$CARGO_TARGET_DIR/$PROFILE"/deps/libtempfile-018ce729f986d26d.rlib -C link-arg=-fuse-ld=/usr/local/bin/mold
