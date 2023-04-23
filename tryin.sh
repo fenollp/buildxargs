@@ -345,6 +345,10 @@ EOF
 
 	if [[ "$crate_type $input" == 'bin src/main.rs' ]] || [[ "$crate_type $input" == 'test src/main.rs' ]]; then
 		# {"message":"cannot derive `author` from Cargo.toml\n\n= note: `CARGO_PKG_AUTHORS` environment variable is not set\n\n= help: use `author = \"...\"` to set author manually\n\n","code":null,"level":"error","spans":[{"file_name":"src/main.rs","byte_start":318,"byte_end":324,"line_start":11,"line_end":11,"column_start":8,"column_end":14,"is_primary":true,"text":[{"text":"#[clap(author, version, about, long_about=None)]","highlight_start":8,"highlight_end":14}],"label":null,"suggested_replacement":null,"suggestion_applicability":null,"expansion":null}],"children":[],"rendered":"error: cannot derive `author` from Cargo.toml\n       \n       = note: `CARGO_PKG_AUTHORS` environment variable is not set\n       \n       = help: use `author = \"...\"` to set author manually\n       \n  --> src/main.rs:11:8\n   |\n11 | #[clap(author, version, about, long_about=None)]\n   |        ^^^^^^\n\n"}
+		case "-${CARGO_PKG_AUTHORS:-}-${CARGO_PKG_VERSION:-}-${CARGO_PKG_DESCRIPTION:-}-" in
+		'----') ;;
+		*) return 4 ;;
+		esac
 		toml() {
 			local prefix=$1; shift
 			grep -F "$prefix" Cargo.toml | head -n1 | cut -c$((1 + ${#prefix}))-
@@ -411,7 +415,7 @@ EOF
 	local buildx=()
 	# buildx+=(--progress plain) ###
 	buildx+=(--network none)
-	buildx+=(--output "$output") # TODO: instead of 2 out dirs out/ and incremental/, do two calls to docker, changing --output and using merging of outputs (doesn't exist yet https://github.com/moby/buildkit/issues/1224) (2 scratch targets with buildxargs)
+	buildx+=(--output "$output") # FIXME: instead of 2 out dirs out/ and incremental/, do two calls to docker, changing --output and using merging of outputs (doesn't exist yet https://github.com/moby/buildkit/issues/1224) (2 scratch targets with buildxargs)
 	if [[ "${input_mount_name:-}" != '' ]]; then
 		buildx+=(--build-context "$input_mount_name=$input_mount_target")
 	fi
