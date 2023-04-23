@@ -271,6 +271,28 @@ rustc() {
 		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libcfg_if-305ff6ac5e1cfc5a.rlib)
 		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libfastrand-f39af6f065361be9.rlib)
 		;;
+	bin-buildxargs-357a2a97fcd61762)
+		# {"message":"can't find crate for `clap_builder` which `clap` depends on","code":{"code":"E0463","explanation":"A plugin/crate was declared but cannot be found.\n\nErroneous code example:\n\n```compile_fail,E0463\n#![feature(plugin)]\n#![plugin(cookie_monster)] // error: can't find crate for `cookie_monster`\nextern crate cake_is_a_lie; // error: can't find crate for `cake_is_a_lie`\n```\n\nYou need to link your code to the relevant crate in order to be able to use it\n(through Cargo or the `-L` option of rustc example). Plugins are crates as\nwell, and you link to them the same way.\n\n## Common causes\n\n- The crate is not present at all. If using Cargo, add it to `[dependencies]`\n  in Cargo.toml.\n- The crate is present, but under a different name. If using Cargo, look for\n  `package = ` under `[dependencies]` in Cargo.toml.\n\n## Common causes for missing `std` or `core`\n\n- You are cross-compiling for a target which doesn't have `std` prepackaged.\n  Consider one of the following:\n  + Adding a pre-compiled version of std with `rustup target add`\n  + Building std from source with `cargo build -Z build-std`\n  + Using `#![no_std]` at the crate root, so you won't need `std` in the first\n    place.\n- You are developing the compiler itself and haven't built libstd from source.\n  You can usually build it with `x.py build library/std`. More information\n  about x.py is available in the [rustc-dev-guide].\n\n[rustc-dev-guide]: https://rustc-dev-guide.rust-lang.org/building/how-to-build-and-run.html#building-the-compiler\n"},"level":"error","spans":[{"file_name":"src/main.rs","byte_start":31,"byte_end":35,"line_start":2,"line_end":2,"column_start":5,"column_end":9,"is_primary":true,"text":[{"text":"use clap::Parser;","highlight_start":5,"highlight_end":9}],"label":"can't find crate","suggested_replacement":null,"suggestion_applicability":null,"expansion":null}],"children":[],"rendered":"error[E0463]: can't find crate for `clap_builder` which `clap` depends on\n --> src/main.rs:2:5\n  |\n2 | use clap::Parser;\n  |     ^^^^ can't find crate\n\n"}
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libclap_builder-02591a0046469edd.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libbitflags-f255a966af175049.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libclap_lex-7dfc2f58447e727e.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libanstream-47e0535dab3ef0d2.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libanstyle_parse-0d4af9095c79189b.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libutf8parse-951ca9bdc6d60a50.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libconcolor_override-305fddcda33650f6.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libanstyle-3d9b242388653423.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libis_terminal-4b94fef286899229.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libio_lifetimes-36f41602071771e6.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/liblibc-9de7ca31dbbda4df.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/librustix-120609be99d53c6b.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/liblinux_raw_sys-67b8335e06167307.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libconcolor_query-74e38d373bc944a9.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libstrsim-8ed1051e7e58e636.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libclap_derive-a4ff03e749cd3808.so)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libonce_cell-da1c67e98ff0d3df.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libcfg_if-305ff6ac5e1cfc5a.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libfastrand-f39af6f065361be9.rlib)
+		;;
 	esac
 
 	mkdir -p "$out_dir"
@@ -321,7 +343,7 @@ WORKDIR $incremental
 EOF
 	fi
 
-	if [[ "$crate_type $input" == 'test src/main.rs' ]]; then
+	if [[ "$crate_type $input" == 'bin src/main.rs' ]] || [[ "$crate_type $input" == 'test src/main.rs' ]]; then
 		# {"message":"cannot derive `author` from Cargo.toml\n\n= note: `CARGO_PKG_AUTHORS` environment variable is not set\n\n= help: use `author = \"...\"` to set author manually\n\n","code":null,"level":"error","spans":[{"file_name":"src/main.rs","byte_start":318,"byte_end":324,"line_start":11,"line_end":11,"column_start":8,"column_end":14,"is_primary":true,"text":[{"text":"#[clap(author, version, about, long_about=None)]","highlight_start":8,"highlight_end":14}],"label":null,"suggested_replacement":null,"suggestion_applicability":null,"expansion":null}],"children":[],"rendered":"error: cannot derive `author` from Cargo.toml\n       \n       = note: `CARGO_PKG_AUTHORS` environment variable is not set\n       \n       = help: use `author = \"...\"` to set author manually\n       \n  --> src/main.rs:11:8\n   |\n11 | #[clap(author, version, about, long_about=None)]\n   |        ^^^^^^\n\n"}
 		toml() {
 			local prefix=$1; shift
@@ -485,4 +507,4 @@ ensure 7f0d415e92dee6e18fd146ff23cab5c791c896b6a753a4fbcd0763709b76f3eb "$CARGO_
 rustc --crate-name buildxargs --edition=2021 src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --test -C metadata=9b4fb3065c88e032 -C extra-filename=-9b4fb3065c88e032 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -C incremental="$CARGO_TARGET_DIR/$PROFILE"/incremental -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern buildxargs="$CARGO_TARGET_DIR/$PROFILE"/deps/libbuildxargs-1052b4790952332f.rlib --extern clap="$CARGO_TARGET_DIR/$PROFILE"/deps/libclap-8996e440435cdc93.rlib --extern shlex="$CARGO_TARGET_DIR/$PROFILE"/deps/libshlex-df9eb4fba8dd532e.rlib --extern tempfile="$CARGO_TARGET_DIR/$PROFILE"/deps/libtempfile-018ce729f986d26d.rlib -C link-arg=-fuse-ld=/usr/local/bin/mold
 ensure ea2d3233ffd643cbf4c57ab3831e01f64bbd47d57f4ed3f19aa976bc8205fad0 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name buildxargs --edition=2021 src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 -C metadata=357a2a97fcd61762 -C extra-filename=-357a2a97fcd61762 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -C incremental="$CARGO_TARGET_DIR/$PROFILE"/incremental -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern buildxargs="$CARGO_TARGET_DIR/$PROFILE"/deps/libbuildxargs-1052b4790952332f.rlib --extern clap="$CARGO_TARGET_DIR/$PROFILE"/deps/libclap-8996e440435cdc93.rlib --extern shlex="$CARGO_TARGET_DIR/$PROFILE"/deps/libshlex-df9eb4fba8dd532e.rlib --extern tempfile="$CARGO_TARGET_DIR/$PROFILE"/deps/libtempfile-018ce729f986d26d.rlib -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 42 "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure 6ef047ff4813ca9d5c64101357757f5b2f76a32037636e3a355655aeee72de35 "$CARGO_TARGET_DIR/$PROFILE"/deps
