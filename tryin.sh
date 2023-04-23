@@ -1,4 +1,4 @@
-#!/bin/bash -eu
+#!/bin/bash -eux
 # trash _target; shellcheck ./tryin.sh && if ./tryin.sh; then echo YAY; else echo FAILED; fi && \tree _target
 
 PROFILE=${PROFILE:-debug}
@@ -17,6 +17,14 @@ ensure() {
 	local dir=${1:-$(basename "$CARGO_TARGET_DIR")}
 	h=$(tar -cf- --directory="$PWD" --sort=name --mtime='UTC 2023-04-15' --group=0 --owner=0 --numeric-owner "$dir" 2>/dev/null | sha256sum)
 	[[ "$h" == "$hash  -" ]]
+}
+
+r_ext() {
+	case "$1" in
+	lib) echo 'rmeta' ;;
+	bin|proc-macro|test) echo 'rlib' ;;
+	*) return 4 ;;
+	esac
 }
 
 rustc() {
@@ -206,11 +214,9 @@ rustc() {
 		# {"message":"can't find crate for `concolor_query` which `anstream` depends on","code":{"code":"E0463","explanation":"A plugin/crate was declared but cannot be found.\n\nErroneous code example:\n\n```compile_fail,E0463\n#![feature(plugin)]\n#![plugin(cookie_monster)] // error: can't find crate for `cookie_monster`\nextern crate cake_is_a_lie; // error: can't find crate for `cake_is_a_lie`\n```\n\nYou need to link your code to the relevant crate in order to be able to use it\n(through Cargo or the `-L` option of rustc example). Plugins are crates as\nwell, and you link to them the same way.\n\n## Common causes\n\n- The crate is not present at all. If using Cargo, add it to `[dependencies]`\n  in Cargo.toml.\n- The crate is present, but under a different name. If using Cargo, look for\n  `package = ` under `[dependencies]` in Cargo.toml.\n\n## Common causes for missing `std` or `core`\n\n- You are cross-compiling for a target which doesn't have `std` prepackaged.\n  Consider one of the following:\n  + Adding a pre-compiled version of std with `rustup target add`\n  + Building std from source with `cargo build -Z build-std`\n  + Using `#![no_std]` at the crate root, so you won't need `std` in the first\n    place.\n- You are developing the compiler itself and haven't built libstd from source.\n  You can usually build it with `x.py build library/std`. More information\n  about x.py is available in the [rustc-dev-guide].\n\n[rustc-dev-guide]: https://rustc-dev-guide.rust-lang.org/building/how-to-build-and-run.html#building-the-compiler\n"},"level":"error","spans":[{"file_name":"/home/pete/.cargo/registry/src/github.com-1ecc6299db9ec823/clap_builder-4.2.1/src/builder/styled_str.rs","byte_start":4982,"byte_end":4990,"line_start":162,"line_end":162,"column_start":9,"column_end":17,"is_primary":true,"text":[{"text":"        anstream::adapter::strip_str(&self.0)","highlight_start":9,"highlight_end":17}],"label":"can't find crate","suggested_replacement":null,"suggestion_applicability":null,"expansion":null}],"children":[],"rendered":"error[E0463]: can't find crate for `concolor_query` which `anstream` depends on\n   --> /home/pete/.cargo/registry/src/github.com-1ecc6299db9ec823/clap_builder-4.2.1/src/builder/styled_str.rs:162:9\n    |\n162 |         anstream::adapter::strip_str(&self.0)\n    |         ^^^^^^^^ can't find crate\n\n"}
 		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libconcolor_query-74e38d373bc944a9.rmeta)
 		;;
-	*-clap_derive-*)
-		local rtype=rmeta
-		[[ "$crate_type" == 'proc-macro' ]] && rtype=rlib #--> outputs a rtype=so
+	'proc-macro'-clap_derive-*)
 		# {"message":"can't find crate for `unicode_ident` which `syn` depends on","code":{"code":"E0463","explanation":"A plugin/crate was declared but cannot be found.\n\nErroneous code example:\n\n```compile_fail,E0463\n#![feature(plugin)]\n#![plugin(cookie_monster)] // error: can't find crate for `cookie_monster`\nextern crate cake_is_a_lie; // error: can't find crate for `cake_is_a_lie`\n```\n\nYou need to link your code to the relevant crate in order to be able to use it\n(through Cargo or the `-L` option of rustc example). Plugins are crates as\nwell, and you link to them the same way.\n\n## Common causes\n\n- The crate is not present at all. If using Cargo, add it to `[dependencies]`\n  in Cargo.toml.\n- The crate is present, but under a different name. If using Cargo, look for\n  `package = ` under `[dependencies]` in Cargo.toml.\n\n## Common causes for missing `std` or `core`\n\n- You are cross-compiling for a target which doesn't have `std` prepackaged.\n  Consider one of the following:\n  + Adding a pre-compiled version of std with `rustup target add`\n  + Building std from source with `cargo build -Z build-std`\n  + Using `#![no_std]` at the crate root, so you won't need `std` in the first\n    place.\n- You are developing the compiler itself and haven't built libstd from source.\n  You can usually build it with `x.py build library/std`. More information\n  about x.py is available in the [rustc-dev-guide].\n\n[rustc-dev-guide]: https://rustc-dev-guide.rust-lang.org/building/how-to-build-and-run.html#building-the-compiler\n"},"level":"error","spans":[{"file_name":"/home/pete/.cargo/registry/src/github.com-1ecc6299db9ec823/clap_derive-4.2.0/src/lib.rs","byte_start":882,"byte_end":885,"line_start":22,"line_end":22,"column_start":5,"column_end":8,"is_primary":true,"text":[{"text":"use syn::{parse_macro_input, DeriveInput};","highlight_start":5,"highlight_end":8}],"label":"can't find crate","suggested_replacement":null,"suggestion_applicability":null,"expansion":null}],"children":[],"rendered":"error[E0463]: can't find crate for `unicode_ident` which `syn` depends on\n  --> /home/pete/.cargo/registry/src/github.com-1ecc6299db9ec823/clap_derive-4.2.0/src/lib.rs:22:5\n   |\n22 | use syn::{parse_macro_input, DeriveInput};\n   |     ^^^ can't find crate\n\n"}
-		externs+=("$CARGO_TARGET_DIR/$PROFILE/deps/libunicode_ident-417636671c982ef8.$rtype")
+		externs+=("$CARGO_TARGET_DIR/$PROFILE/deps/libunicode_ident-417636671c982ef8.$(r_ext "$crate_type")")
 		;;
 	*-clap-*)
 		# {"message":"can't find crate for `bitflags` which `clap_builder` depends on","code":{"code":"E0463","explanation":"A plugin/crate was declared but cannot be found.\n\nErroneous code example:\n\n```compile_fail,E0463\n#![feature(plugin)]\n#![plugin(cookie_monster)] // error: can't find crate for `cookie_monster`\nextern crate cake_is_a_lie; // error: can't find crate for `cake_is_a_lie`\n```\n\nYou need to link your code to the relevant crate in order to be able to use it\n(through Cargo or the `-L` option of rustc example). Plugins are crates as\nwell, and you link to them the same way.\n\n## Common causes\n\n- The crate is not present at all. If using Cargo, add it to `[dependencies]`\n  in Cargo.toml.\n- The crate is present, but under a different name. If using Cargo, look for\n  `package = ` under `[dependencies]` in Cargo.toml.\n\n## Common causes for missing `std` or `core`\n\n- You are cross-compiling for a target which doesn't have `std` prepackaged.\n  Consider one of the following:\n  + Adding a pre-compiled version of std with `rustup target add`\n  + Building std from source with `cargo build -Z build-std`\n  + Using `#![no_std]` at the crate root, so you won't need `std` in the first\n    place.\n- You are developing the compiler itself and haven't built libstd from source.\n  You can usually build it with `x.py build library/std`. More information\n  about x.py is available in the [rustc-dev-guide].\n\n[rustc-dev-guide]: https://rustc-dev-guide.rust-lang.org/building/how-to-build-and-run.html#building-the-compiler\n"},"level":"error","spans":[{"file_name":"/home/pete/.cargo/registry/src/github.com-1ecc6299db9ec823/clap-4.2.1/src/lib.rs","byte_start":4206,"byte_end":4218,"line_start":98,"line_end":98,"column_start":9,"column_end":21,"is_primary":true,"text":[{"text":"pub use clap_builder::*;","highlight_start":9,"highlight_end":21}],"label":"can't find crate","suggested_replacement":null,"suggestion_applicability":null,"expansion":null}],"children":[],"rendered":"error[E0463]: can't find crate for `bitflags` which `clap_builder` depends on\n  --> /home/pete/.cargo/registry/src/github.com-1ecc6299db9ec823/clap-4.2.1/src/lib.rs:98:9\n   |\n98 | pub use clap_builder::*;\n   |         ^^^^^^^^^^^^ can't find crate\n\n"}
@@ -244,26 +250,26 @@ rustc() {
 		;;
 	test-buildxargs-9b4fb3065c88e032)
 		# {"message":"can't find crate for `clap_builder` which `clap` depends on","code":{"code":"E0463","explanation":"A plugin/crate was declared but cannot be found.\n\nErroneous code example:\n\n```compile_fail,E0463\n#![feature(plugin)]\n#![plugin(cookie_monster)] // error: can't find crate for `cookie_monster`\nextern crate cake_is_a_lie; // error: can't find crate for `cake_is_a_lie`\n```\n\nYou need to link your code to the relevant crate in order to be able to use it\n(through Cargo or the `-L` option of rustc example). Plugins are crates as\nwell, and you link to them the same way.\n\n## Common causes\n\n- The crate is not present at all. If using Cargo, add it to `[dependencies]`\n  in Cargo.toml.\n- The crate is present, but under a different name. If using Cargo, look for\n  `package = ` under `[dependencies]` in Cargo.toml.\n\n## Common causes for missing `std` or `core`\n\n- You are cross-compiling for a target which doesn't have `std` prepackaged.\n  Consider one of the following:\n  + Adding a pre-compiled version of std with `rustup target add`\n  + Building std from source with `cargo build -Z build-std`\n  + Using `#![no_std]` at the crate root, so you won't need `std` in the first\n    place.\n- You are developing the compiler itself and haven't built libstd from source.\n  You can usually build it with `x.py build library/std`. More information\n  about x.py is available in the [rustc-dev-guide].\n\n[rustc-dev-guide]: https://rustc-dev-guide.rust-lang.org/building/how-to-build-and-run.html#building-the-compiler\n"},"level":"error","spans":[{"file_name":"src/main.rs","byte_start":31,"byte_end":35,"line_start":2,"line_end":2,"column_start":5,"column_end":9,"is_primary":true,"text":[{"text":"use clap::Parser;","highlight_start":5,"highlight_end":9}],"label":"can't find crate","suggested_replacement":null,"suggestion_applicability":null,"expansion":null}],"children":[],"rendered":"error[E0463]: can't find crate for `clap_builder` which `clap` depends on\n --> src/main.rs:2:5\n  |\n2 | use clap::Parser;\n  |     ^^^^ can't find crate\n\n"}
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libclap_builder-02591a0046469edd.rmeta)
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libbitflags-f255a966af175049.rmeta)
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libclap_lex-7dfc2f58447e727e.rmeta)
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libanstream-47e0535dab3ef0d2.rmeta)
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libanstyle_parse-0d4af9095c79189b.rmeta)
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libutf8parse-951ca9bdc6d60a50.rmeta)
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libconcolor_override-305fddcda33650f6.rmeta)
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libanstyle-3d9b242388653423.rmeta)
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libis_terminal-4b94fef286899229.rmeta)
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libio_lifetimes-36f41602071771e6.rmeta)
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/liblibc-9de7ca31dbbda4df.rmeta)
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/librustix-120609be99d53c6b.rmeta)
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/liblinux_raw_sys-67b8335e06167307.rmeta)
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libconcolor_query-74e38d373bc944a9.rmeta)
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libstrsim-8ed1051e7e58e636.rmeta)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libclap_builder-02591a0046469edd.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libbitflags-f255a966af175049.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libclap_lex-7dfc2f58447e727e.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libanstream-47e0535dab3ef0d2.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libanstyle_parse-0d4af9095c79189b.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libutf8parse-951ca9bdc6d60a50.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libconcolor_override-305fddcda33650f6.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libanstyle-3d9b242388653423.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libis_terminal-4b94fef286899229.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libio_lifetimes-36f41602071771e6.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/liblibc-9de7ca31dbbda4df.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/librustix-120609be99d53c6b.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/liblinux_raw_sys-67b8335e06167307.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libconcolor_query-74e38d373bc944a9.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libstrsim-8ed1051e7e58e636.rlib)
 		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libclap_derive-a4ff03e749cd3808.so)
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libonce_cell-da1c67e98ff0d3df.rmeta)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libonce_cell-da1c67e98ff0d3df.rlib)
 		# {"message":"found possibly newer version of crate `cfg_if` which `tempfile` depends on","code":{"code":"E0460","explanation":"Found possibly newer version of crate `..` which `..` depends on.\n\nConsider these erroneous files:\n\n`a1.rs`\n```ignore (needs-linkage-with-other-tests)\n#![crate_name = \"a\"]\n\npub fn foo<T>() {}\n```\n\n`a2.rs`\n```ignore (needs-linkage-with-other-tests)\n#![crate_name = \"a\"]\n\npub fn foo<T>() {\n    println!(\"foo<T>()\");\n}\n```\n\n`b.rs`\n```ignore (needs-linkage-with-other-tests)\n#![crate_name = \"b\"]\n\nextern crate a; // linked with `a1.rs`\n\npub fn foo() {\n    a::foo::<isize>();\n}\n```\n\n`main.rs`\n```ignore (needs-linkage-with-other-tests)\nextern crate a; // linked with `a2.rs`\nextern crate b; // error: found possibly newer version of crate `a` which `b`\n                //        depends on\n\nfn main() {}\n```\n\nThe dependency graph of this program can be represented as follows:\n```text\n    crate `main`\n         |\n         +-------------+\n         |             |\n         |             v\ndepends: |         crate `b`\n `a` v1  |             |\n         |             | depends:\n         |             |  `a` v2\n         v             |\n      crate `a` <------+\n```\n\nCrate `main` depends on crate `a` (version 1) and crate `b` which in turn\ndepends on crate `a` (version 2); this discrepancy in versions cannot be\nreconciled. This difference in versions typically occurs when one crate is\ncompiled and linked, then updated and linked to another crate. The crate\n\"version\" is a SVH (Strict Version Hash) of the crate in an\nimplementation-specific way. Note that this error can *only* occur when\ndirectly compiling and linking with `rustc`; [Cargo] automatically resolves\ndependencies, without using the compiler's own dependency management that\ncauses this issue.\n\nThis error can be fixed by:\n * Using [Cargo], the Rust package manager, automatically fixing this issue.\n * Recompiling crate `a` so that both crate `b` and `main` have a uniform\n   version to depend on.\n\n[Cargo]: ../cargo/index.html\n"},"level":"error","spans":[{"file_name":"src/main.rs","byte_start":166,"byte_end":174,"line_start":6,"line_end":6,"column_start":5,"column_end":13,"is_primary":true,"text":[{"text":"use tempfile::NamedTempFile;","highlight_start":5,"highlight_end":13}],"label":null,"suggested_replacement":null,"suggestion_applicability":null,"expansion":null}],"children":[{"message":"perhaps that crate needs to be recompiled?","code":null,"level":"note","spans":[],"children":[],"rendered":null},{"message":"the following crate versions were found:\ncrate `cfg_if`: /usr/local/rustup/toolchains/1.68.2-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/lib/libcfg_if-eecd84150c4ad967.rlib\ncrate `tempfile`: /home/pete/wefwefwef/buildxargs.git/_target/debug/deps/libtempfile-018ce729f986d26d.rlib","code":null,"level":"note","spans":[],"children":[],"rendered":null}],"rendered":"error[E0460]: found possibly newer version of crate `cfg_if` which `tempfile` depends on\n --> src/main.rs:6:5\n  |\n6 | use tempfile::NamedTempFile;\n  |     ^^^^^^^^\n  |\n  = note: perhaps that crate needs to be recompiled?\n  = note: the following crate versions were found:\n          crate `cfg_if`: /usr/local/rustup/toolchains/1.68.2-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/lib/libcfg_if-eecd84150c4ad967.rlib\n          crate `tempfile`: /home/pete/wefwefwef/buildxargs.git/_target/debug/deps/libtempfile-018ce729f986d26d.rlib\n\n"}
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libcfg_if-305ff6ac5e1cfc5a.rmeta)
-		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libfastrand-f39af6f065361be9.rmeta)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libcfg_if-305ff6ac5e1cfc5a.rlib)
+		externs+=("$CARGO_TARGET_DIR/$PROFILE"/deps/libfastrand-f39af6f065361be9.rlib)
 		;;
 	esac
 
@@ -275,22 +281,22 @@ rustc() {
 	*/build.rs)
 		input_mount_name=input_build_rs--$(basename "${input%/build.rs}")
 		input_mount_target=${input%/build.rs}
-		stage_name=build_rs-$full_crate_id-builder
+		stage_name=build_rs-$full_crate_id
 		;;
 	*/src/lib.rs)
 		input_mount_name=input_src_lib_rs--$(basename "${input%/src/lib.rs}")
 		input_mount_target=${input%/src/lib.rs}
-		stage_name=src_lib_rs-$full_crate_id-builder
+		stage_name=src_lib_rs-$full_crate_id
 		;;
 	src/lib.rs)
-		input_mount_name=input_src_lib_rs--$full_crate_id
-		input_mount_target=$PWD/src # TODO? this may be too restricted
-		stage_name=src_lib_rs-$full_crate_id-builder
+		input_mount_name=''
+		input_mount_target=''
+		stage_name=final-$full_crate_id
 		;;
 	src/main.rs)
-		input_mount_name=input_src_main_rs--$full_crate_id
-		input_mount_target=$PWD/src # TODO? this may be too restricted
-		stage_name=src_main_rs-$full_crate_id-builder
+		input_mount_name=''
+		input_mount_target=''
+		stage_name=final-$full_crate_id
 		;;
 	*) return 4 ;;
 	esac
@@ -308,21 +314,59 @@ rustc() {
 FROM rust AS $stage_name
 WORKDIR $out_dir
 EOF
+
 	if [[ "$incremental" != '' ]]; then
 		cat <<EOF >>"$dockerfile"
 WORKDIR $incremental
 EOF
 	fi
-	cat <<EOF >>"$dockerfile"
+
+	if [[ "$crate_type $input" == 'test src/main.rs' ]]; then
+		# {"message":"cannot derive `author` from Cargo.toml\n\n= note: `CARGO_PKG_AUTHORS` environment variable is not set\n\n= help: use `author = \"...\"` to set author manually\n\n","code":null,"level":"error","spans":[{"file_name":"src/main.rs","byte_start":318,"byte_end":324,"line_start":11,"line_end":11,"column_start":8,"column_end":14,"is_primary":true,"text":[{"text":"#[clap(author, version, about, long_about=None)]","highlight_start":8,"highlight_end":14}],"label":null,"suggested_replacement":null,"suggestion_applicability":null,"expansion":null}],"children":[],"rendered":"error: cannot derive `author` from Cargo.toml\n       \n       = note: `CARGO_PKG_AUTHORS` environment variable is not set\n       \n       = help: use `author = \"...\"` to set author manually\n       \n  --> src/main.rs:11:8\n   |\n11 | #[clap(author, version, about, long_about=None)]\n   |        ^^^^^^\n\n"}
+		toml() {
+			local prefix=$1; shift
+			grep -F "$prefix" Cargo.toml | head -n1 | cut -c$((1 + ${#prefix}))-
+		}
+		cat <<EOF >>"$dockerfile"
+ENV CARGO_PKG_AUTHORS='$(toml 'authors = ')'
+ENV CARGO_PKG_VERSION='$(toml 'version = ')'
+ENV CARGO_PKG_DESCRIPTION='$(toml 'description = ')'
+EOF
+	fi
+
+	if [[ "${input_mount_name:-}" == '' ]]; then
+		if [[ -d "$PWD"/.git ]]; then
+			cat <<EOF >>"$dockerfile"
+WORKDIR $PWD
+EOF
+			while read -r f; do
+			cat <<EOF >>"$dockerfile"
+COPY $f $(dirname "$f")/
+EOF
+			done < <(git ls-files "$PWD" | sort)
+			cat <<EOF >>"$dockerfile"
+RUN $backslash
+EOF
+		else
+			cat <<EOF >>"$dockerfile"
+WORKDIR $PWD
+COPY . .
+RUN $backslash
+EOF
+		fi
+	else
+		cat <<EOF >>"$dockerfile"
 WORKDIR $PWD
 RUN $backslash
   --mount=type=bind,from=$input_mount_name,target=$input_mount_target $backslash
 EOF
-for extern in "${externs[@]}"; do
-	cat <<EOF >>"$dockerfile"
+	fi
+
+	for extern in "${externs[@]}"; do
+		cat <<EOF >>"$dockerfile"
   --mount=type=bind,from=deps,source=${extern#"$CARGO_TARGET_DIR/$PROFILE/deps"},target=$extern $backslash
 EOF
-done
+	done
 
 	printf '    ["rustc"' >>"$dockerfile"
 	for arg in "${args[@]}"; do
@@ -344,12 +388,14 @@ EOF
 	fi
 
 	# echo ">>>" /home/pete/.cargo/bin/rustc "${args[@]}" "$input" ############
-	# echo ">>> " && cat "$dockerfile" ###########
+	echo ">>> " && cat "$dockerfile" ###########
 	local buildx=()
 	# buildx+=(--progress plain) ###
 	buildx+=(--network none)
 	buildx+=(--output "$output") # TODO: instead of 2 out dirs out/ and incremental/, do two calls to docker, changing --output and using merging of outputs (doesn't exist yet https://github.com/moby/buildkit/issues/1224) (2 scratch targets with buildxargs)
-	buildx+=(--build-context "$input_mount_name=$input_mount_target")
+	if [[ "${input_mount_name:-}" != '' ]]; then
+		buildx+=(--build-context "$input_mount_name=$input_mount_target")
+	fi
 	if [[ ${#externs[@]} -ne 0 ]]; then
 		# TODO: only mount the required files, not the whole deps directory (to maximize cache hits and minimize context sizes)
 		buildx+=(--build-context deps="$CARGO_TARGET_DIR/$PROFILE/deps")
@@ -357,7 +403,7 @@ EOF
 	buildx+=(--build-context rust=docker-image://docker.io/library/rust:1.68.2-slim@sha256:df4d8577fab8b65fabe9e7f792d6f4c57b637dd1c595f3f0a9398a9854e17094) # rustc 1.68.2 (9eb3afe9e 2023-03-27)
 	buildx+=(--file -)
 	buildx+=("$PWD")
-	DOCKER_BUILDKIT=1 docker buildx build "${buildx[@]}" <"$dockerfile"
+	docker buildx build "${buildx[@]}" <"$dockerfile"
 	rm "$dockerfile"
 	mv "$output"/out/* "$out_dir"
 	rmdir "$output"/out
@@ -437,6 +483,6 @@ ensure c68b91d305505ea79d63b8243c0a23d4356fe01e7fb8514d4b5b1b283d9f57ba "$CARGO_
 rustc --crate-name buildxargs --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --test -C metadata=4248d2626f765b01 -C extra-filename=-4248d2626f765b01 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -C incremental="$CARGO_TARGET_DIR/$PROFILE"/incremental -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern clap="$CARGO_TARGET_DIR/$PROFILE"/deps/libclap-8996e440435cdc93.rlib --extern shlex="$CARGO_TARGET_DIR/$PROFILE"/deps/libshlex-df9eb4fba8dd532e.rlib --extern tempfile="$CARGO_TARGET_DIR/$PROFILE"/deps/libtempfile-018ce729f986d26d.rlib -C link-arg=-fuse-ld=/usr/local/bin/mold
 ensure 7f0d415e92dee6e18fd146ff23cab5c791c896b6a753a4fbcd0763709b76f3eb "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name buildxargs --edition=2021 src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --test -C metadata=9b4fb3065c88e032 -C extra-filename=-9b4fb3065c88e032 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -C incremental="$CARGO_TARGET_DIR/$PROFILE"/incremental -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern buildxargs="$CARGO_TARGET_DIR/$PROFILE"/deps/libbuildxargs-1052b4790952332f.rlib --extern clap="$CARGO_TARGET_DIR/$PROFILE"/deps/libclap-8996e440435cdc93.rlib --extern shlex="$CARGO_TARGET_DIR/$PROFILE"/deps/libshlex-df9eb4fba8dd532e.rlib --extern tempfile="$CARGO_TARGET_DIR/$PROFILE"/deps/libtempfile-018ce729f986d26d.rlib -C link-arg=-fuse-ld=/usr/local/bin/mold
-ensure 42 "$CARGO_TARGET_DIR/$PROFILE"/deps
+ensure ea2d3233ffd643cbf4c57ab3831e01f64bbd47d57f4ed3f19aa976bc8205fad0 "$CARGO_TARGET_DIR/$PROFILE"/deps
 rustc --crate-name buildxargs --edition=2021 src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 -C metadata=357a2a97fcd61762 -C extra-filename=-357a2a97fcd61762 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps -C linker=/usr/bin/clang -C incremental="$CARGO_TARGET_DIR/$PROFILE"/incremental -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --extern buildxargs="$CARGO_TARGET_DIR/$PROFILE"/deps/libbuildxargs-1052b4790952332f.rlib --extern clap="$CARGO_TARGET_DIR/$PROFILE"/deps/libclap-8996e440435cdc93.rlib --extern shlex="$CARGO_TARGET_DIR/$PROFILE"/deps/libshlex-df9eb4fba8dd532e.rlib --extern tempfile="$CARGO_TARGET_DIR/$PROFILE"/deps/libtempfile-018ce729f986d26d.rlib -C link-arg=-fuse-ld=/usr/local/bin/mold
 ensure 42 "$CARGO_TARGET_DIR/$PROFILE"/deps
