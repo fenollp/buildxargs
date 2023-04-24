@@ -68,7 +68,7 @@ fn main() -> Res<()> {
 
     if args.debug {
         let mut stderr = stderr().lock();
-        write_as_buildx_bake(&mut stderr, &targets)?;
+        write_as_bake(&mut stderr, &targets)?;
     }
 
     let ixs_failed = try_quick(
@@ -132,7 +132,7 @@ fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Res<ExitStatus> {
     }
 
     let mut f = NamedTempFile::new()?;
-    write_as_buildx_bake(&mut f, targets)?;
+    write_as_bake(&mut f, targets)?;
     f.flush()?;
     // TODO: pass data through BufWriter to STDIN with `-f-`
     command.arg("-f");
@@ -204,6 +204,10 @@ fn write_as_buildx_bake(f: &mut impl Write, targets: &[DockerBuildArgs]) -> Res<
             writeln!(f, "  labels = [{label:?}]")?;
         }
 
+        if let Some(network) = &target.network {
+            writeln!(f, "  network = {network:?}")?;
+        }
+
         if target.no_cache {
             writeln!(f, "  no-cache = true")?;
         }
@@ -258,6 +262,7 @@ enum DockerBuild {
     Build(BuildArgs),
 }
 
+// https://github.com/docker/docs/blob/main/build/bake/file-definition.md
 // Complete list of valid target fields from https://docs.docker.com/engine/reference/commandline/buildx_bake
 // args
 // cache-from
@@ -303,6 +308,11 @@ struct BuildArgs {
     /// Set metadata for an image
     #[clap(long = "label")]
     label: Option<String>, // labels (TODO: stringArray)
+
+    // FIXME: https://docs.rs/clap/latest/clap/enum.ArgAction.html#variant.Append
+    /// Set the networking mode for the "RUN" instructions during build (default "default")
+    #[clap(long = "network", action(clap::ArgAction::Append))]
+    network: Option<String>,
 
     /// Do not use cache when building the image
     #[clap(long = "no-cache")]

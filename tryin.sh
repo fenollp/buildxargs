@@ -323,11 +323,10 @@ rustc() {
 	*) return 4 ;;
 	esac
 
+	local backslash="\\"
+
 	local dockerfile
 	dockerfile=$(mktemp)
-	local output
-	output=$(mktemp -d)
-	local backslash="\\"
 	cat <<EOF >"$dockerfile"
 # syntax=docker.io/docker/dockerfile:1@sha256:39b85bbfa7536a5feceb7372a0817649ecb2724562a38360f4d6a7782a409b14
 
@@ -398,42 +397,60 @@ EOF
 	done
 	printf ', "%s"]\n' "$input" >>"$dockerfile"
 
-	cat <<EOF >>"$dockerfile"
-FROM scratch
-COPY --from=$stage_name $out_dir/*$extra_filename.* /out/
-EOF
 	if [[ "$incremental" != '' ]]; then
 		cat <<EOF >>"$dockerfile"
-COPY --from=$stage_name $incremental /incremental/
+FROM scratch AS incremental
+COPY --from=$stage_name $incremental /
 EOF
 	fi
+	cat <<EOF >>"$dockerfile"
+FROM scratch AS out
+COPY --from=$stage_name $out_dir/*$extra_filename.* /
+EOF
 
-	# echo ">>>" /home/pete/.cargo/bin/rustc "${args[@]}" "$input" ############
-	# echo ">>> " && cat "$dockerfile" ###########
-	local buildx=()
-	# buildx+=(--progress plain) ###
-	buildx+=(--platform local)
-	buildx+=(--network none)
-	buildx+=(--output "$output") # FIXME: instead of 2 out dirs out/ and incremental/, do two calls to docker, changing --output and using merging of outputs (doesn't exist yet https://github.com/moby/buildkit/issues/1224) (2 scratch targets with buildxargs)
+	declare -A contexts
 	if [[ "${input_mount_name:-}" != '' ]]; then
-		buildx+=(--build-context "$input_mount_name=$input_mount_target")
+		contexts["$input_mount_name"]="$input_mount_target"
 	fi
 	if [[ ${#externs[@]} -ne 0 ]]; then
 		# TODO: only mount the required files, not the whole deps directory (to maximize cache hits and minimize context sizes)
-		buildx+=(--build-context deps="$CARGO_TARGET_DIR/$PROFILE/deps")
+		contexts['deps']="$CARGO_TARGET_DIR/$PROFILE/deps"
 	fi
-	buildx+=(--build-context rust=docker-image://docker.io/library/rust:1.68.2-slim@sha256:df4d8577fab8b65fabe9e7f792d6f4c57b637dd1c595f3f0a9398a9854e17094) # rustc 1.68.2 (9eb3afe9e 2023-03-27)
-	buildx+=(--file -)
-	buildx+=("$PWD")
-	docker buildx build "${buildx[@]}" <"$dockerfile"
+	contexts['rust']=docker-image://docker.io/library/rust:1.68.2-slim@sha256:df4d8577fab8b65fabe9e7f792d6f4c57b637dd1c595f3f0a9398a9854e17094 # rustc 1.68.2 (9eb3afe9e 2023-03-27)
+
+	local bake_hcl
+	bake_hcl=$(mktemp)
+	cat <<EOF >"$bake_hcl"
+target "out" {
+	context = "$PWD"
+	contexts = {$(for name in "${!contexts[@]}"; do printf '"%s"="%s",' "$name" "${contexts[$name]}"; done)}
+	dockerfile = "$dockerfile"
+	network = "none"
+	output = ["$out_dir"] # https://github.com/moby/buildkit/issues/1224
+	platforms = ["local"]
+	target = "out"
+}
+EOF
+
+	if [[ "$incremental" == '' ]]; then
+		cat <<EOF >>"$bake_hcl"
+group "default" { targets = ["out"] }
+EOF
+	else
+		cat <<EOF >>"$bake_hcl"
+group "default" { targets = ["out", "incremental"] }
+target "incremental" {
+	inherits = ["out"]
+	output = ["$incremental"]
+	target = "incremental"
+}
+EOF
+	fi
+	local progress=auto
+	# local progress=plain ###
+	docker buildx bake --progress=$progress --file=- <"$bake_hcl"
+	rm "$bake_hcl"
 	rm "$dockerfile"
-	mv "$output"/out/* "$out_dir"
-	rmdir "$output"/out
-	if [[ "$incremental" != '' ]]; then
-		mv "$output"/incremental/* "$incremental"
-		rmdir "$output"/incremental
-	fi
-	rmdir "$output"
 }
 
 rustc --crate-name build_script_build --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/io-lifetimes-1.0.3/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="close" --cfg feature="default" --cfg feature="libc" --cfg feature="windows-sys" -C metadata=5fc4d6e9dda15f11 -C extra-filename=-5fc4d6e9dda15f11 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/build/io-lifetimes-5fc4d6e9dda15f11 -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
