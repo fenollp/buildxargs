@@ -323,8 +323,6 @@ rustc() {
 	*) return 4 ;;
 	esac
 
-	local 
-
 	local dockerfile
 	dockerfile=$(mktemp)
 	local output
@@ -414,6 +412,7 @@ EOF
 	# echo ">>> " && cat "$dockerfile" ###########
 	local buildx=()
 	# buildx+=(--progress plain) ###
+	buildx+=(--platform local)
 	buildx+=(--network none)
 	buildx+=(--output "$output") # FIXME: instead of 2 out dirs out/ and incremental/, do two calls to docker, changing --output and using merging of outputs (doesn't exist yet https://github.com/moby/buildkit/issues/1224) (2 scratch targets with buildxargs)
 	if [[ "${input_mount_name:-}" != '' ]]; then
