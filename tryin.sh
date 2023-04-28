@@ -458,9 +458,9 @@ EOF
 	set +e
 	if [[ "${DEBUG:-}" == '1' ]]; then
 		cat "$bake_hcl" >&2
-		docker buildx bake --file=- <"$bake_hcl" >&2
+		docker --debug buildx bake --file=- <"$bake_hcl" >&2
 	else
-		docker buildx bake --file=- <"$bake_hcl" >/dev/null 2>&1
+		docker         buildx bake --file=- <"$bake_hcl" >/dev/null 2>&1
 	fi
 	err=$?
 	set -e
