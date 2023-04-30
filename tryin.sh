@@ -15,14 +15,6 @@ mkdir -p "$CARGO_HOME/registry/cache"
 mkdir -p "$CARGO_HOME/registry/src"
 mkdir -p "$CARGO_TARGET_DIR/$PROFILE/deps"
 
-r_ext() {
-	case "$1" in
-	lib) echo 'rmeta' ;;
-	bin|proc-macro|test) echo 'rlib' ;;
-	*) return 4 ;;
-	esac
-}
-
 _rustc() {
 	local args=()
 
@@ -132,10 +124,24 @@ _rustc() {
 	local full_crate_id
 	full_crate_id=$crate_type-$crate_name$extra_filename
 
-	# https://github.com/rust-lang/rust/issues/68417#issuecomment-576809886
-	all_externs=()
-	local crate_externs=$CARGO_TARGET_DIR/$PROFILE/externs_$crate_name$extra_filename
+	# https://github.com/rust-lang/cargo/issues/12059
+	local all_externs=()
+	local externs_prefix=$CARGO_TARGET_DIR/$PROFILE/externs_
+	local crate_externs=$externs_prefix$crate_name$extra_filename
 	if ! [[ -s "$crate_externs" ]]; then
+		local ext=''
+		case "$crate_type" in
+		lib)        ext=rmeta ;;
+		bin)        ext=rlib ;;
+		test)       ext=rlib ;;
+		proc-macro) ext=rlib
+			touch "${crate_externs}_proc-macro" ;; # This way crates that depend on this know they must require it as .so
+		*) return 4 ;;
+		esac
+
+		# shellcheck disable=SC2207
+		IFS=$'\n' externs=($(sort <<<"${externs[*]}")); unset IFS
+		local short_externs=()
 		for extern in "${externs[@]}"; do
 			all_externs+=("$extern")
 
@@ -147,28 +153,27 @@ _rustc() {
 			*.so) extern=${extern%.so} ;;
 			*) return 4 ;;
 			esac
-			echo "$extern" >>"$crate_externs"
+			short_externs+=("$extern")
 
-			extern_crate_externs="$CARGO_TARGET_DIR/$PROFILE/externs_$extern"
+			local extern_crate_externs=$externs_prefix$extern
 			if [[ -s "$extern_crate_externs" ]]; then
-				# echo ">>> $extern" ; cat "$extern_crate_externs" || true
 				while read -r transitive; do
-					if [[ "$transitive" == 'clap_derive-a4ff03e749cd3808' ]]; then
-						all_externs+=("lib${transitive}.so") ############ FIXME
+					[[ "$transitive" == '' ]] && return 4
+					if [[ -f "$externs_prefix${transitive}_proc-macro" ]]; then
+						all_externs+=("lib$transitive.so")
 					else
-						all_externs+=("lib${transitive}.$(r_ext "$crate_type")")
+						all_externs+=("lib$transitive.$ext")
 					fi
-
-					echo "$transitive" >>"$crate_externs"
+					short_externs+=("$transitive")
 				done <"$extern_crate_externs"
 			fi
 		done
-		# if ! diff -q <(cat "$crate_externs") <(sort -u "$crate_externs"); then
-		# 	return 4
-		# fi
-		if [[ -s "$crate_externs" ]]; then
-			sort -u "$crate_externs" >"$crate_externs"~
-			mv "$crate_externs"~ "$crate_externs"
+		# shellcheck disable=SC2207
+		IFS=$'\n' all_externs=($(sort <<<"${all_externs[*]}")); unset IFS
+		if [[ ${#short_externs[@]} -ne 0 ]]; then
+			# shellcheck disable=SC2207
+			IFS=$'\n' short_externs=($(sort <<<"${short_externs[*]}")); unset IFS
+			printf "%s\n" "${short_externs[@]}" >"$crate_externs"
 		fi
 	fi
 
@@ -342,11 +347,7 @@ EOF
 	err=$?
 	set -e
 	rm "$bake_hcl"
-	if [[ $err -ne 0 ]]; then
-		# for extern in "${all_externs[@]}"; do
-		# 	echo ">>> $extern"
-		# done
-		# echo ">>>" ; cat "$crate_externs" || true
+	if [[ $err -ne 0 ]] && [[ "${DEBUG:-}" != '1' ]]; then
 		args=()
 		for arg in "$@"; do
 			if [[ "$arg" =~ ^feature= ]]; then
