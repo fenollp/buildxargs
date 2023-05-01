@@ -1,4 +1,5 @@
 #!/bin/bash -eu
+# trash target >/dev/null 2>&1; shellcheck ./tryin.sh && PROFILE=debug CARGO_HOME=$HOME/.cargo CARGO_TARGET_DIR=$PWD/target RUSTC_WRAPPER=$PWD/tryin.sh cargo build --locked --frozen --offline --all-targets --all-features
 
 if [[ "${DEBUG:-}" == '1' ]]; then
 	set -x
@@ -74,15 +75,15 @@ _rustc() {
 		if [[ "$key $val" =~ ^-C.extra-filename= ]]; then
 			[[ "$extra_filename" != '' ]] && return 4
 			extra_filename=${val#extra-filename=}
+			# if [[ "$extra_filename" == '-bac4617242d6ae3e' ]]; then
+			# if [[ "$extra_filename" == '-72568223b383cc53' ]]; then
+			# 	set -x
+			# fi
 		fi
 
 		if [[ "$key $val" =~ ^-C.incremental= ]]; then
 			[[ "$incremental" != '' ]] && return 4
 			incremental=${val#incremental=}
-		fi
-
-		if [[ "$key $val" =~ ^--cfg.feature=[^\"] ]]; then
-			val="feature=\\\"${val#feature=}\\\""
 		fi
 
 		case "$key" in
@@ -209,6 +210,8 @@ _rustc() {
 
 	local dockerfile
 	dockerfile=$(mktemp)
+	local stdio
+	stdio=$(mktemp -d)
 	cat <<EOF >"$dockerfile"
 # syntax=docker.io/docker/dockerfile:1@sha256:39b85bbfa7536a5feceb7372a0817649ecb2724562a38360f4d6a7782a409b14
 
@@ -273,11 +276,11 @@ EOF
 EOF
 	done
 
-	printf '    ["rustc"' >>"$dockerfile"
+	printf '    set -eux && rustc' >>"$dockerfile"
 	for arg in "${args[@]}"; do
-		printf ', "%s"' "$arg" >>"$dockerfile"
+		printf " '%s'" "$arg" >>"$dockerfile"
 	done
-	printf ', "%s"]\n' "$input" >>"$dockerfile"
+	printf ' %s >/stdout 2>/stderr\n' "$input" >>"$dockerfile"
 
 	if [[ "$incremental" != '' ]]; then
 		cat <<EOF >>"$dockerfile"
@@ -286,8 +289,11 @@ COPY --from=$stage_name $incremental /
 EOF
 	fi
 	cat <<EOF >>"$dockerfile"
+FROM scratch AS stdio
+COPY --from=$stage_name /stderr /
+COPY --from=$stage_name /stdout /
 FROM scratch AS out
-COPY --from=$stage_name $out_dir/*$extra_filename.* /
+COPY --from=$stage_name $out_dir/*$extra_filename* /
 EOF
 
 	declare -A contexts
@@ -299,6 +305,7 @@ EOF
 		contexts['deps']=$deps_path
 	fi
 	contexts['rust']=docker-image://docker.io/library/rust:1.68.2-slim@sha256:df4d8577fab8b65fabe9e7f792d6f4c57b637dd1c595f3f0a9398a9854e17094 # rustc 1.68.2 (9eb3afe9e 2023-03-27)
+	# contexts['rust']=docker-image://docker.io/library/rust:1.69.0-slim@sha256:8b85a8a6bf7ed968e24bab2eae6f390d2c9c8dbed791d3547fef584000f48f9e # rustc 1.69.0 (84c898d65 2023-04-16)
 
 	local bake_hcl
 	bake_hcl=$(mktemp)
@@ -318,16 +325,21 @@ DOCKERFILE
 	platforms = ["local"]
 	target = "out"
 }
+target "stdio" {
+	inherits = ["out"]
+	output = ["$stdio"]
+	target = "stdio"
+}
 EOF
 	rm "$dockerfile"
 
 	if [[ "$incremental" == '' ]]; then
 		cat <<EOF >>"$bake_hcl"
-group "default" { targets = ["out"] }
+group "default" { targets = ["out", "stdio"] }
 EOF
 	else
 		cat <<EOF >>"$bake_hcl"
-group "default" { targets = ["out", "incremental"] }
+group "default" { targets = ["out", "stdio", "incremental"] }
 target "incremental" {
 	inherits = ["out"]
 	output = ["$incremental"]
@@ -339,6 +351,8 @@ EOF
 	err=0
 	set +e
 	if [[ "${DEBUG:-}" == '1' ]]; then
+	# if [[ "${DEBUG:-}" == '1' ]] || [[ "$extra_filename" == '-bac4617242d6ae3e' ]]; then
+	# if [[ "${DEBUG:-}" == '1' ]] || [[ "$extra_filename" == '-72568223b383cc53' ]]; then
 		cat "$bake_hcl" >&2
 		docker --debug buildx bake --file=- <"$bake_hcl" >&2
 	else
@@ -347,6 +361,13 @@ EOF
 	err=$?
 	set -e
 	rm "$bake_hcl"
+	if [[ $err -eq 0 ]]; then
+		cat "$stdio/stderr" >&2
+		cat "$stdio/stdout"
+	fi
+	rm "$stdio/stderr" >/dev/null 2>&1 || true
+	rm "$stdio/stdout" >/dev/null 2>&1 || true
+	rmdir "$stdio" >/dev/null 2>&1 || true
 	if [[ $err -ne 0 ]] && [[ "${DEBUG:-}" != '1' ]]; then
 		args=()
 		for arg in "$@"; do
@@ -363,8 +384,15 @@ EOF
 }
 
 if [[ $# -ne 0 ]]; then
-	_rustc "$@"
-	exit
+	shift # Drop 'rustc' from $@
+	if [[ "${1:-}" == '-' ]]; then
+		exec "$(which rustc)" "$@"
+	# elif [[ "${2:-}" == 'build_script_build' ]]; then
+	# 	exec "$(which rustc)" "$@"
+	else
+		_rustc "$@"
+		exit
+	fi
 fi
 
 
