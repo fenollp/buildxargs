@@ -1,9 +1,8 @@
 #!/bin/bash -eu
-# trash target 2>/dev/null; shellcheck ./wrapper.sh && RUSTC_WRAPPER=./wrapper.sh cargo build --locked --frozen --offline --all-targets --all-features ; \tree -h target
+# trash target >/dev/null 2>&1; shellcheck ./wrapper.sh && RUSTC_WRAPPER=./wrapper.sh cargo build --locked --frozen --offline --all-targets --all-features
 
-echo "$*" 1>&2
 # shellcheck disable=SC2093
-exec "$@"
+exec ./tryin.sh "$@"
 
 rustc --crate-name build_script_build --edition=2018 /home/pete/.cargo/registry/src/github.com-1ecc6299db9ec823/io-lifetimes-1.0.3/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="close" --cfg feature="default" --cfg feature="libc" --cfg feature="windows-sys" -C metadata=5fc4d6e9dda15f11 -C extra-filename=-5fc4d6e9dda15f11 --out-dir /home/pete/wefwefwef/buildxargs.git/target/debug/build/io-lifetimes-5fc4d6e9dda15f11 -C linker=/usr/bin/clang -L dependency=/home/pete/wefwefwef/buildxargs.git/target/debug/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
 rustc --crate-name build_script_build /home/pete/.cargo/registry/src/github.com-1ecc6299db9ec823/libc-0.2.140/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --cfg feature="default" --cfg feature="extra_traits" --cfg feature="std" -C metadata=beb72f2d4f0e8864 -C extra-filename=-beb72f2d4f0e8864 --out-dir /home/pete/wefwefwef/buildxargs.git/target/debug/build/libc-beb72f2d4f0e8864 -C linker=/usr/bin/clang -L dependency=/home/pete/wefwefwef/buildxargs.git/target/debug/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
