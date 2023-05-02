@@ -75,10 +75,6 @@ _rustc() {
 		if [[ "$key $val" =~ ^-C.extra-filename= ]]; then
 			[[ "$extra_filename" != '' ]] && return 4
 			extra_filename=${val#extra-filename=}
-			# if [[ "$extra_filename" == '-bac4617242d6ae3e' ]]; then
-			# if [[ "$extra_filename" == '-72568223b383cc53' ]]; then
-			# 	set -x
-			# fi
 		fi
 
 		if [[ "$key $val" =~ ^-C.incremental= ]]; then
@@ -141,7 +137,7 @@ _rustc() {
 		esac
 
 		# shellcheck disable=SC2207
-		IFS=$'\n' externs=($(sort <<<"${externs[*]}")); unset IFS
+		IFS=$'\n' externs=($(sort -u <<<"${externs[*]}")); unset IFS
 		local short_externs=()
 		for extern in "${externs[@]}"; do
 			all_externs+=("$extern")
@@ -170,10 +166,10 @@ _rustc() {
 			fi
 		done
 		# shellcheck disable=SC2207
-		IFS=$'\n' all_externs=($(sort <<<"${all_externs[*]}")); unset IFS
+		IFS=$'\n' all_externs=($(sort -u <<<"${all_externs[*]}")); unset IFS
 		if [[ ${#short_externs[@]} -ne 0 ]]; then
 			# shellcheck disable=SC2207
-			IFS=$'\n' short_externs=($(sort <<<"${short_externs[*]}")); unset IFS
+			IFS=$'\n' short_externs=($(sort -u <<<"${short_externs[*]}")); unset IFS
 			printf "%s\n" "${short_externs[@]}" >"$crate_externs"
 		fi
 	fi
@@ -363,8 +359,6 @@ EOF
 	err=0
 	set +e
 	if [[ "${DEBUG:-}" == '1' ]]; then
-	# if [[ "${DEBUG:-}" == '1' ]] || [[ "$extra_filename" == '-bac4617242d6ae3e' ]]; then
-	# if [[ "${DEBUG:-}" == '1' ]] || [[ "$extra_filename" == '-72568223b383cc53' ]]; then
 		cat "$bake_hcl" >&2
 		docker --debug buildx bake --file=- <"$bake_hcl" >&2
 	else
