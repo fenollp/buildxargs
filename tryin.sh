@@ -1,22 +1,17 @@
 #!/bin/bash -eu
 # trash target >/dev/null 2>&1; shellcheck ./tryin.sh && PROFILE=debug CARGO_HOME=$HOME/.cargo CARGO_TARGET_DIR=$PWD/target RUSTC_WRAPPER=$PWD/tryin.sh cargo build --locked --frozen --offline --all-targets --all-features
 
-if [[ "${DEBUG:-}" == '1' ]]; then
+if [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
 	set -x
 fi
 
-PROFILE=${PROFILE:-debug}
-CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}
-CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$PWD/_target}
-
-mkdir -p "$CARGO_HOME/git/db"
-mkdir -p "$CARGO_HOME/git/checkouts"
-mkdir -p "$CARGO_HOME/registry/index"
-mkdir -p "$CARGO_HOME/registry/cache"
-mkdir -p "$CARGO_HOME/registry/src"
-mkdir -p "$CARGO_TARGET_DIR/$PROFILE/deps"
-
 _rustc() {
+	local PROFILE=${PROFILE:-debug}
+	local CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-target}
+	case "$CARGO_TARGET_DIR" in /*) ;; *) CARGO_TARGET_DIR=$PWD/$CARGO_TARGET_DIR ;; esac
+	local deps_path="$CARGO_TARGET_DIR/$PROFILE/deps"
+	mkdir -p "$deps_path"
+
 	local args=()
 
 	local crate_name=''
@@ -26,8 +21,6 @@ _rustc() {
 	local incremental=''
 	local input=''
 	local out_dir=''
-
-	local deps_path="$CARGO_TARGET_DIR/$PROFILE/deps"
 
 	local key=''; local val=''; local pair=''
 	for arg in "$@"; do
@@ -82,6 +75,10 @@ _rustc() {
 			incremental=${val#incremental=}
 		fi
 
+		if [[ "$key $val" =~ ^-L.dependency= ]]; then
+			case "${val#dependency=}" in /*) ;; *) val=dependency=$PWD/${val#dependency=} ;; esac
+		fi
+
 		case "$key" in
 		'--crate-name')
 			[[ "$crate_name" != '' ]] && return 4
@@ -105,6 +102,8 @@ _rustc() {
 		'--out-dir')
 			[[ "$out_dir" != '' ]] && return 4
 			out_dir=$val
+			case "$out_dir" in /*) ;; *) out_dir=$PWD/$out_dir ;; esac
+			val=$out_dir
 			;;
 		esac
 
@@ -204,15 +203,15 @@ _rustc() {
 
 	local backslash="\\"
 
-	RUSTC_BUILDX_DOCKER_IMAGE=${RUSTC_BUILDX_DOCKER_IMAGE:-docker-image://docker.io/library/rust:1.69.0-slim@sha256:8b85a8a6bf7ed968e24bab2eae6f390d2c9c8dbed791d3547fef584000f48f9e} # rustc 1.69.0 (84c898d65 2023-04-16)
-	RUSTC_BUILDX_DOCKER_SYNTAX=${RUSTC_BUILDX_DOCKER_SYNTAX:-docker.io/docker/dockerfile:1@sha256:39b85bbfa7536a5feceb7372a0817649ecb2724562a38360f4d6a7782a409b14}
+	RUSTCBUILDX_DOCKER_IMAGE=${RUSTCBUILDX_DOCKER_IMAGE:-docker-image://docker.io/library/rust:1.69.0-slim@sha256:8b85a8a6bf7ed968e24bab2eae6f390d2c9c8dbed791d3547fef584000f48f9e} # rustc 1.69.0 (84c898d65 2023-04-16)
+	RUSTCBUILDX_DOCKER_SYNTAX=${RUSTCBUILDX_DOCKER_SYNTAX:-docker.io/docker/dockerfile:1@sha256:39b85bbfa7536a5feceb7372a0817649ecb2724562a38360f4d6a7782a409b14}
 
 	local dockerfile
 	dockerfile=$(mktemp)
 	local stdio
 	stdio=$(mktemp -d)
 	cat <<EOF >"$dockerfile"
-# syntax=$RUSTC_BUILDX_DOCKER_SYNTAX
+# syntax=$RUSTCBUILDX_DOCKER_SYNTAX
 
 FROM rust AS $stage_name
 WORKDIR $out_dir
@@ -244,7 +243,7 @@ EOF
 		[[ "${CARGO_CRATE_NAME:-unset}" != 'unset' ]] && echo "ENV CARGO_CRATE_NAME='$CARGO_CRATE_NAME'" >>"$dockerfile"
 		[[ "${CARGO_BIN_NAME:-unset}" != 'unset' ]] && echo "ENV CARGO_BIN_NAME='$CARGO_BIN_NAME'" >>"$dockerfile"
 		# TODO: also maybe set ENVs in all calls to buildx.
-		# TODO: allow additional envs to be passed as RUSTC_BUILDX_ENV_* env(s)
+		# TODO: allow additional envs to be passed as RUSTCBUILDX_ENV_* env(s)
 		# OUT_DIR — If the package has a build script, this is set to the folder where the build script should place its output. See below for more information. (Only set during compilation.)
 		# CARGO_BIN_EXE_<name> — The absolute path to a binary target’s executable. This is only set when building an integration test or benchmark. This may be used with the env macro to find the executable to run for testing purposes. The <name> is the name of the binary target, exactly as-is. For example, CARGO_BIN_EXE_my-program for a binary named my-program. Binaries are automatically built when the test is built, unless the binary has required features that are not enabled.
 		# CARGO_PRIMARY_PACKAGE — This environment variable will be set if the package being built is primary. Primary packages are the ones the user selected on the command-line, either with -p flags or the defaults based on the current directory and the default workspace members. This environment variable will not be set when building dependencies. This is only set when compiling the package (not when running binaries or tests).
@@ -285,11 +284,11 @@ EOF
 EOF
 	done
 
-	printf '    set -eux && rustc' >>"$dockerfile"
+	printf '    if ! rustc' >>"$dockerfile"
 	for arg in "${args[@]}"; do
 		printf " '%s'" "$arg" >>"$dockerfile"
 	done
-	printf ' %s >/stdout 2>/stderr\n' "$input" >>"$dockerfile"
+	printf ' %s >/stdout 2>/stderr; then head /std???; exit 1; fi\n' "$input" >>"$dockerfile"
 
 	if [[ "$incremental" != '' ]]; then
 		cat <<EOF >>"$dockerfile"
@@ -313,7 +312,7 @@ EOF
 		# TODO: check if gains are possible (we're binding a directory growing in size)
 		contexts['deps']=$deps_path
 	fi
-	contexts['rust']=$RUSTC_BUILDX_DOCKER_IMAGE
+	contexts['rust']=$RUSTCBUILDX_DOCKER_IMAGE
 
 	local bake_hcl
 	bake_hcl=$(mktemp)
@@ -358,7 +357,7 @@ EOF
 
 	err=0
 	set +e
-	if [[ "${DEBUG:-}" == '1' ]]; then
+	if [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
 		cat "$bake_hcl" >&2
 		docker --debug buildx bake --file=- <"$bake_hcl" >&2
 	else
@@ -374,7 +373,7 @@ EOF
 	rm "$stdio/stderr" >/dev/null 2>&1 || true
 	rm "$stdio/stdout" >/dev/null 2>&1 || true
 	rmdir "$stdio" >/dev/null 2>&1 || true
-	if [[ $err -ne 0 ]] && [[ "${DEBUG:-}" != '1' ]]; then
+	if [[ $err -ne 0 ]] && [[ "${RUSTCBUILDX_DEBUG:-}" != '1' ]]; then
 		args=()
 		for arg in "$@"; do
 			if [[ "$arg" =~ ^feature= ]]; then
@@ -401,7 +400,15 @@ fi
 
 
 # Reproduce a working build: (main @ db53336) (docker buildx version: github.com/docker/buildx v0.10.4 c513d34) linux/amd64
-# trash _target >/dev/null 2>&1; shellcheck ./tryin.sh && if DEBUG=1 ./tryin.sh; then echo YAY; else echo FAILED && tree _target; fi
+# trash _target >/dev/null 2>&1; shellcheck ./tryin.sh && if RUSTCBUILDX_DEBUG=1 CARGO_TARGET_DIR=$PWD/_target ./tryin.sh; then echo YAY; else echo FAILED && tree _target; fi
+
+CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}
+PROFILE=${PROFILE:-debug}
+mkdir -p "$CARGO_HOME/git/db"
+mkdir -p "$CARGO_HOME/git/checkouts"
+mkdir -p "$CARGO_HOME/registry/index"
+mkdir -p "$CARGO_HOME/registry/cache"
+mkdir -p "$CARGO_HOME/registry/src"
 
 ensure() {
 	local hash=$1; shift
@@ -410,7 +417,7 @@ ensure() {
 	[[ "$h" == "$hash  -" ]]
 }
 
-export RUSTC_BUILDX_DOCKER_IMAGE=docker-image://docker.io/library/rust:1.68.2-slim@sha256:df4d8577fab8b65fabe9e7f792d6f4c57b637dd1c595f3f0a9398a9854e17094 # rustc 1.68.2 (9eb3afe9e 2023-03-27)
+export RUSTCBUILDX_DOCKER_IMAGE=docker-image://docker.io/library/rust:1.68.2-slim@sha256:df4d8577fab8b65fabe9e7f792d6f4c57b637dd1c595f3f0a9398a9854e17094 # rustc 1.68.2 (9eb3afe9e 2023-03-27)
 
 toml() {
 	local prefix=$1; shift
