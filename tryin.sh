@@ -229,20 +229,30 @@ EOF
 	fi
 
 	if [[ "$crate_type $input" == 'bin src/main.rs' ]] || [[ "$crate_type $input" == 'test src/main.rs' ]]; then
-		# {"message":"cannot derive `author` from Cargo.toml\n\n= note: `CARGO_PKG_AUTHORS` environment variable is not set\n\n= help: use `author = \"...\"` to set author manually\n\n","code":null,"level":"error","spans":[{"file_name":"src/main.rs","byte_start":318,"byte_end":324,"line_start":11,"line_end":11,"column_start":8,"column_end":14,"is_primary":true,"text":[{"text":"#[clap(author, version, about, long_about=None)]","highlight_start":8,"highlight_end":14}],"label":null,"suggested_replacement":null,"suggestion_applicability":null,"expansion":null}],"children":[],"rendered":"error: cannot derive `author` from Cargo.toml\n       \n       = note: `CARGO_PKG_AUTHORS` environment variable is not set\n       \n       = help: use `author = \"...\"` to set author manually\n       \n  --> src/main.rs:11:8\n   |\n11 | #[clap(author, version, about, long_about=None)]\n   |        ^^^^^^\n\n"}
-		case "-${CARGO_PKG_AUTHORS:-}-${CARGO_PKG_VERSION:-}-${CARGO_PKG_DESCRIPTION:-}-" in
-		'----') ;;
-		*) return 4 ;;
-		esac
-		toml() {
-			local prefix=$1; shift
-			grep -F "$prefix" Cargo.toml | head -n1 | cut -c$((1 + ${#prefix}))-
-		}
-		cat <<EOF >>"$dockerfile"
-ENV CARGO_PKG_AUTHORS='$(toml 'authors = ')'
-ENV CARGO_PKG_VERSION='$(toml 'version = ')'
-ENV CARGO_PKG_DESCRIPTION='$(toml 'description = ')'
-EOF
+		# https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-crates
+		[[ "${CARGO:-unset}" != 'unset' ]] && echo "ENV CARGO='$CARGO'" >>"$dockerfile"
+		[[ "${CARGO_MANIFEST_DIR:-unset}" != 'unset' ]] && echo "ENV CARGO_MANIFEST_DIR='$CARGO_MANIFEST_DIR'" >>"$dockerfile"
+		[[ "${CARGO_PKG_VERSION:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_VERSION='$CARGO_PKG_VERSION'" >>"$dockerfile"
+		[[ "${CARGO_PKG_VERSION_MAJOR:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_VERSION_MAJOR='$CARGO_PKG_VERSION_MAJOR'" >>"$dockerfile"
+		[[ "${CARGO_PKG_VERSION_MINOR:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_VERSION_MINOR='$CARGO_PKG_VERSION_MINOR'" >>"$dockerfile"
+		[[ "${CARGO_PKG_VERSION_PATCH:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_VERSION_PATCH='$CARGO_PKG_VERSION_PATCH'" >>"$dockerfile"
+		[[ "${CARGO_PKG_VERSION_PRE:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_VERSION_PRE='$CARGO_PKG_VERSION_PRE'" >>"$dockerfile"
+		[[ "${CARGO_PKG_AUTHORS:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_AUTHORS='$CARGO_PKG_AUTHORS'" >>"$dockerfile"
+		[[ "${CARGO_PKG_NAME:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_NAME='$CARGO_PKG_NAME'" >>"$dockerfile"
+		[[ "${CARGO_PKG_DESCRIPTION:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_DESCRIPTION='$CARGO_PKG_DESCRIPTION'" >>"$dockerfile"
+		[[ "${CARGO_PKG_HOMEPAGE:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_HOMEPAGE='$CARGO_PKG_HOMEPAGE'" >>"$dockerfile"
+		[[ "${CARGO_PKG_REPOSITORY:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_REPOSITORY='$CARGO_PKG_REPOSITORY'" >>"$dockerfile"
+		[[ "${CARGO_PKG_LICENSE:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_LICENSE='$CARGO_PKG_LICENSE'" >>"$dockerfile"
+		[[ "${CARGO_PKG_LICENSE_FILE:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_LICENSE_FILE='$CARGO_PKG_LICENSE_FILE'" >>"$dockerfile"
+		[[ "${CARGO_PKG_RUST_VERSION:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_RUST_VERSION='$CARGO_PKG_RUST_VERSION'" >>"$dockerfile"
+		[[ "${CARGO_CRATE_NAME:-unset}" != 'unset' ]] && echo "ENV CARGO_CRATE_NAME='$CARGO_CRATE_NAME'" >>"$dockerfile"
+		[[ "${CARGO_BIN_NAME:-unset}" != 'unset' ]] && echo "ENV CARGO_BIN_NAME='$CARGO_BIN_NAME'" >>"$dockerfile"
+		# TODO: also maybe set ENVs in all calls to buildx.
+		# TODO: allow additional envs to be passed as RUSTC_BUILDX_ENV env(s)
+		# OUT_DIR — If the package has a build script, this is set to the folder where the build script should place its output. See below for more information. (Only set during compilation.)
+		# CARGO_BIN_EXE_<name> — The absolute path to a binary target’s executable. This is only set when building an integration test or benchmark. This may be used with the env macro to find the executable to run for testing purposes. The <name> is the name of the binary target, exactly as-is. For example, CARGO_BIN_EXE_my-program for a binary named my-program. Binaries are automatically built when the test is built, unless the binary has required features that are not enabled.
+		# CARGO_PRIMARY_PACKAGE — This environment variable will be set if the package being built is primary. Primary packages are the ones the user selected on the command-line, either with -p flags or the defaults based on the current directory and the default workspace members. This environment variable will not be set when building dependencies. This is only set when compiling the package (not when running binaries or tests).
+		# CARGO_TARGET_TMPDIR — Only set when building integration test or benchmark code. This is a path to a directory inside the target directory where integration tests or benchmarks are free to put any data needed by the tests/benches. Cargo initially creates this directory but doesn’t manage its content in any way, this is the responsibility of the test code.
 	fi
 
 	if [[ "${input_mount_name:-}" == '' ]]; then
@@ -407,6 +417,17 @@ ensure() {
 }
 
 export RUSTC_BUILDX_IMAGE=docker-image://docker.io/library/rust:1.68.2-slim@sha256:df4d8577fab8b65fabe9e7f792d6f4c57b637dd1c595f3f0a9398a9854e17094 # rustc 1.68.2 (9eb3afe9e 2023-03-27)
+
+toml() {
+	local prefix=$1; shift
+	grep -F "$prefix" "$PWD"/Cargo.toml | head -n1 | cut -c$((1 + ${#prefix}))-
+}
+# shellcheck disable=SC2155
+export CARGO_PKG_AUTHORS=$(toml 'authors = ')
+# shellcheck disable=SC2155
+export CARGO_PKG_VERSION=$(toml 'version = ')
+# shellcheck disable=SC2155
+export CARGO_PKG_DESCRIPTION=$(toml 'description = ')
 
 _rustc --crate-name build_script_build --edition=2018 "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/io-lifetimes-1.0.3/build.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=211 --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --cfg 'feature="close"' --cfg 'feature="default"' --cfg 'feature="libc"' --cfg 'feature="windows-sys"' -C metadata=5fc4d6e9dda15f11 -C extra-filename=-5fc4d6e9dda15f11 --out-dir "$CARGO_TARGET_DIR/$PROFILE"/build/io-lifetimes-5fc4d6e9dda15f11 -C linker=/usr/bin/clang -L dependency="$CARGO_TARGET_DIR/$PROFILE"/deps --cap-lints allow -C link-arg=-fuse-ld=/usr/local/bin/mold
 ensure 81d7ebfda3a0eb99ea43ecce1f6a626fca4f44acd8c4c56e9736a9ba814aad5c "$CARGO_TARGET_DIR/$PROFILE"/build/io-lifetimes-5fc4d6e9dda15f11
