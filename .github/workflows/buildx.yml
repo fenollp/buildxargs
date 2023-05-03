@@ -50,7 +50,7 @@ jobs:
     - run: if RUSTCBUILDX_DEBUG=1 CARGO_TARGET_DIR=$PWD/_target ./tryin.sh; then echo YAY; else echo FAILED && tree _target && exit 1; fi
 
 
-  tryin-sequential:
+  wrapped-release-build:
     runs-on: ubuntu-latest
     steps:
     - uses: actions-rs/toolchain@v1
@@ -66,4 +66,4 @@ jobs:
 
     - uses: docker/setup-buildx-action@v2
 
-    - run: PROFILE=debug CARGO_HOME=$HOME/.cargo CARGO_TARGET_DIR=$PWD/target RUSTC_WRAPPER=$PWD/tryin.sh cargo build --locked --frozen --offline --all-targets --all-features
+    - run: RUSTC_WRAPPER=$HOME/wefwefwef/buildxargs.git/tryin.sh cargo build --locked --frozen --offline --all-targets --all-features
