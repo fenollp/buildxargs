@@ -6,6 +6,10 @@ if [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
 fi
 
 _rustc() {
+	if [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
+		until (set -o noclobber; echo >/tmp/global.lock) >/dev/null 2>&1; do sleep .5; done
+	fi
+
 	local PROFILE=${PROFILE:-debug}
 	local CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-target}
 	case "$CARGO_TARGET_DIR" in /*) ;; *) CARGO_TARGET_DIR=$PWD/$CARGO_TARGET_DIR ;; esac
@@ -373,7 +377,9 @@ EOF
 	rm "$stdio/stderr" >/dev/null 2>&1 || true
 	rm "$stdio/stdout" >/dev/null 2>&1 || true
 	rmdir "$stdio" >/dev/null 2>&1 || true
-	if [[ $err -ne 0 ]] && [[ "${RUSTCBUILDX_DEBUG:-}" != '1' ]]; then
+	if [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
+		rm /tmp/global.lock >/dev/null 2>&1
+	elif [[ $err -ne 0 ]]; then
 		args=()
 		for arg in "$@"; do
 			if [[ "$arg" =~ ^feature= ]]; then
