@@ -14,12 +14,6 @@ _rustc() {
 		until (set -o noclobber; echo >/tmp/global.lock) >/dev/null 2>&1; do sleep .5; done
 	fi
 
-	local PROFILE=${PROFILE:-debug}
-	local CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-target}
-	case "$CARGO_TARGET_DIR" in /*) ;; *) CARGO_TARGET_DIR=$PWD/$CARGO_TARGET_DIR ;; esac
-	local deps_path="$CARGO_TARGET_DIR/$PROFILE/deps"
-	mkdir -p "$deps_path"
-
 	local args=()
 
 	local crate_name=''
@@ -146,12 +140,24 @@ _rustc() {
 	# [[ "$l_native" == '' ]] && return 4 MAY be unset: only set on calls that link to .a libs
 	[[ "$out_dir" == '' ]] && return 4
 
+	# Can't rely on $PWD nor $CARGO_TARGET_DIR because `cargo` changes them.
+	# Out dir though...
+	# --out-dir "$CARGO_TARGET_DIR/$PROFILE"/build/rustix-2a01a00f5bdd1924
+	# --out-dir "$CARGO_TARGET_DIR/$PROFILE"/deps
+	local target_path=''
+	case "$out_dir" in
+	*/deps) target_path=${out_dir%/deps} ;;
+	*/build/*) target_path=${out_dir%/build/*} ;;
+	*) return 4 ;;
+	esac
+	mkdir -p "$target_path"/deps
+
 	local full_crate_id
 	full_crate_id=$crate_type-$crate_name$extra_filename
 
 	# https://github.com/rust-lang/cargo/issues/12059
 	local all_externs=()
-	local externs_prefix=$CARGO_TARGET_DIR/$PROFILE/externs_
+	local externs_prefix=$target_path/externs_
 	local crate_externs=$externs_prefix$crate_name$extra_filename
 	if ! [[ -s "$crate_externs" ]]; then
 		local ext=''
@@ -345,7 +351,7 @@ EOF
 
 	for extern in "${all_externs[@]}"; do
 		cat <<EOF >>"$dockerfile"
-  --mount=type=bind,from=deps,source=/$extern,target=$deps_path/$extern $backslash
+  --mount=type=bind,from=deps,source=/$extern,target=$target_path/deps/$extern $backslash
 EOF
 	done
 
@@ -378,7 +384,7 @@ EOF
 	fi
 	if [[ ${#all_externs[@]} -ne 0 ]]; then
 		# TODO: check if gains are possible (we're binding a directory growing in size)
-		contexts['deps']=$deps_path
+		contexts['deps']=$target_path/deps
 	fi
 	contexts['rust']=$RUSTCBUILDX_DOCKER_IMAGE
 
