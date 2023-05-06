@@ -22,7 +22,6 @@ _rustc() {
 	local extra_filename=''
 	local incremental=''
 	local input=''
-	local l_native=''
 	local out_dir=''
 
 	local key=''; local val=''; local pair=''
@@ -88,12 +87,6 @@ _rustc() {
 			case "${val#dependency=}" in /*) ;; *) val=dependency=$PWD/${val#dependency=} ;; esac
 			;;
 
-		'-L native='*)
-			case "${val#native=}" in /*) ;; *) return 4 ;; esac
-			[[ "$l_native" != '' ]] && return 4
-			l_native=${val#native=}
-			;;
-
 		'--crate-name '*)
 			[[ "$crate_name" != '' ]] && return 4
 			crate_name=$val
@@ -137,7 +130,6 @@ _rustc() {
 	[[ "$extra_filename" == '' ]] && return 4
 	# [[ "$incremental" == '' ]] && return 4 MAY be unset: only set on last calls
 	[[ "$input" == '' ]] && return 4
-	# [[ "$l_native" == '' ]] && return 4 MAY be unset: only set on calls that link to .a libs
 	[[ "$out_dir" == '' ]] && return 4
 
 	# Can't rely on $PWD nor $CARGO_TARGET_DIR because `cargo` changes them.
@@ -151,6 +143,11 @@ _rustc() {
 	*) return 4 ;;
 	esac
 	mkdir -p "$target_path"/deps
+
+	local crate_out=''
+	if [[ "${OUT_DIR:-}" =~ /out$ ]]; then
+		crate_out=$OUT_DIR # NOTE: not $out_dir
+	fi
 
 	local full_crate_id
 	full_crate_id=$crate_type-$crate_name$extra_filename
@@ -343,9 +340,9 @@ RUN $backslash
 EOF
 	fi
 
-	if [[ "$l_native" != '' ]]; then
+	if [[ "$crate_out" != '' ]]; then
 		cat <<EOF >>"$dockerfile"
-  --mount=type=bind,from=l_native,target=$l_native $backslash
+  --mount=type=bind,from=crate-out,target=$crate_out $backslash
 EOF
 	fi
 
@@ -379,8 +376,8 @@ EOF
 	if [[ "$input_mount_name" != '' ]]; then
 		contexts["$input_mount_name"]=$input_mount_target
 	fi
-	if [[ "$l_native" != '' ]]; then
-		contexts['l_native']=$l_native
+	if [[ "$crate_out" != '' ]]; then
+		contexts['crate-out']=$crate_out
 	fi
 	if [[ ${#all_externs[@]} -ne 0 ]]; then
 		# TODO: check if gains are possible (we're binding a directory growing in size)
