@@ -79,39 +79,39 @@ _rustc() {
 
 		[[ "$val" == '' ]] && continue
 
-		if [[ "$key $val" =~ ^-C.extra-filename= ]]; then
+		case "$key $val" in
+		'-C extra-filename='*)
 			[[ "$extra_filename" != '' ]] && return 4
 			extra_filename=${val#extra-filename=}
-		fi
+			;;
 
-		if [[ "$key $val" =~ ^-C.incremental= ]]; then
+		'-C incremental='*)
 			[[ "$incremental" != '' ]] && return 4
 			incremental=${val#incremental=}
-		fi
+			;;
 
-		if [[ "$key $val" =~ ^-L.dependency= ]]; then
+		'-L dependency='*)
 			case "${val#dependency=}" in /*) ;; *) val=dependency=$PWD/${val#dependency=} ;; esac
-		fi
+			;;
 
-		if [[ "$key $val" =~ ^-L.native= ]]; then
+		'-L native='*)
 			case "${val#native=}" in /*) ;; *) return 4 ;; esac
 			[[ "$l_native" != '' ]] && return 4
 			l_native=${val#native=}
-		fi
+			;;
 
-		case "$key" in
-		'--crate-name')
+		'--crate-name '*)
 			[[ "$crate_name" != '' ]] && return 4
 			crate_name=$val
 			;;
 
-		'--crate-type')
+		'--crate-type '*)
 			[[ "$crate_type" != '' ]] && return 4
 			case "$val" in bin|lib|proc-macro) ;; *) return 4;; esac
 			crate_type=$val
 			;;
 
-		'--extern')
+		'--extern '*)
 			# Sysroot crates (e.g. https://doc.rust-lang.org/proc_macro)
 			case "$val" in alloc|core|proc_macro|std|test) continue ;; esac
 			local extern=${val#*=}
@@ -127,7 +127,7 @@ _rustc() {
 			externs+=("$(basename "$extern")")
 			;;
 
-		'--out-dir')
+		'--out-dir '*)
 			[[ "$out_dir" != '' ]] && return 4
 			out_dir=$val
 			case "$out_dir" in /*) ;; *) out_dir=$PWD/$out_dir ;; esac
