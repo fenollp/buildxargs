@@ -41,6 +41,9 @@ _rustc() {
 			[[ "$input" != '' ]] && return 4
 			input=$key
 			pair=E; key=''; val=''
+			# For e.g. /home/pete/.cargo/registry/src/github.com-1ecc6299db9ec823/ahash-0.7.6/./build.rs
+			# shellcheck disable=SC2001
+			input=$(sed 's%/[.]/%/%g' <<<"$input")
 			continue ;;
 		esac
 
@@ -99,8 +102,16 @@ _rustc() {
 			# Sysroot crates (e.g. https://doc.rust-lang.org/proc_macro)
 			case "$val" in alloc|core|proc_macro|std|test) continue ;; esac
 			local extern=${val#*=}
-			case "$extern" in "$deps_path"/*) ;; *) return 4 ;; esac
-			externs+=("${extern#"$deps_path"/}")
+			# NOTE:
+			# https://github.com/rust-lang/cargo/issues/9661
+			# https://github.com/dtolnay/cxx/blob/83d9d43892d9fe67dd031e4115ae38d0ef3c4712/gen/build/src/target.rs#L10
+			# https://github.com/rust-lang/cargo/issues/6100
+			# This doesn't always verify: case "$extern" in "$deps_path"/*) ;; *) return 4 ;; esac
+			# because $CARGO_TARGET_DIR is sometimes set to $PWD/target which is sometimes /home/pete/.cargo/registry/src/github.com-1ecc6299db9ec823/anstyle-parse-0.1.1
+			# So we can't do: externs+=("${extern#"$deps_path"/}")
+			# Anyway the goal is simply to just extract libutf8parse-03cddaef72c90e73.rmeta from /home/pete/wefwefwef/buildxargs.git/target/debug/deps/libutf8parse-03cddaef72c90e73.rmeta
+			# So let's just do that!
+			externs+=("$(basename "$extern")")
 			;;
 
 		'--out-dir')
@@ -227,32 +238,49 @@ WORKDIR $incremental
 EOF
 	fi
 
-	if [[ "$crate_type $input" == 'bin src/main.rs' ]] || [[ "$crate_type $input" == 'test src/main.rs' ]]; then
-		# https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-crates
-		[[ "${CARGO:-unset}" != 'unset' ]] && echo "ENV CARGO='$CARGO'" >>"$dockerfile"
-		[[ "${CARGO_MANIFEST_DIR:-unset}" != 'unset' ]] && echo "ENV CARGO_MANIFEST_DIR='$CARGO_MANIFEST_DIR'" >>"$dockerfile"
-		[[ "${CARGO_PKG_VERSION:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_VERSION='$CARGO_PKG_VERSION'" >>"$dockerfile"
-		[[ "${CARGO_PKG_VERSION_MAJOR:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_VERSION_MAJOR='$CARGO_PKG_VERSION_MAJOR'" >>"$dockerfile"
-		[[ "${CARGO_PKG_VERSION_MINOR:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_VERSION_MINOR='$CARGO_PKG_VERSION_MINOR'" >>"$dockerfile"
-		[[ "${CARGO_PKG_VERSION_PATCH:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_VERSION_PATCH='$CARGO_PKG_VERSION_PATCH'" >>"$dockerfile"
-		[[ "${CARGO_PKG_VERSION_PRE:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_VERSION_PRE='$CARGO_PKG_VERSION_PRE'" >>"$dockerfile"
-		[[ "${CARGO_PKG_AUTHORS:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_AUTHORS='$CARGO_PKG_AUTHORS'" >>"$dockerfile"
-		[[ "${CARGO_PKG_NAME:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_NAME='$CARGO_PKG_NAME'" >>"$dockerfile"
-		[[ "${CARGO_PKG_DESCRIPTION:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_DESCRIPTION='$CARGO_PKG_DESCRIPTION'" >>"$dockerfile"
-		[[ "${CARGO_PKG_HOMEPAGE:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_HOMEPAGE='$CARGO_PKG_HOMEPAGE'" >>"$dockerfile"
-		[[ "${CARGO_PKG_REPOSITORY:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_REPOSITORY='$CARGO_PKG_REPOSITORY'" >>"$dockerfile"
-		[[ "${CARGO_PKG_LICENSE:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_LICENSE='$CARGO_PKG_LICENSE'" >>"$dockerfile"
-		[[ "${CARGO_PKG_LICENSE_FILE:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_LICENSE_FILE='$CARGO_PKG_LICENSE_FILE'" >>"$dockerfile"
-		[[ "${CARGO_PKG_RUST_VERSION:-unset}" != 'unset' ]] && echo "ENV CARGO_PKG_RUST_VERSION='$CARGO_PKG_RUST_VERSION'" >>"$dockerfile"
-		[[ "${CARGO_CRATE_NAME:-unset}" != 'unset' ]] && echo "ENV CARGO_CRATE_NAME='$CARGO_CRATE_NAME'" >>"$dockerfile"
-		[[ "${CARGO_BIN_NAME:-unset}" != 'unset' ]] && echo "ENV CARGO_BIN_NAME='$CARGO_BIN_NAME'" >>"$dockerfile"
-		# TODO: also maybe set ENVs in all calls to buildx.
-		# TODO: allow additional envs to be passed as RUSTCBUILDX_ENV_* env(s)
-		# OUT_DIR — If the package has a build script, this is set to the folder where the build script should place its output. See below for more information. (Only set during compilation.)
-		# CARGO_BIN_EXE_<name> — The absolute path to a binary target’s executable. This is only set when building an integration test or benchmark. This may be used with the env macro to find the executable to run for testing purposes. The <name> is the name of the binary target, exactly as-is. For example, CARGO_BIN_EXE_my-program for a binary named my-program. Binaries are automatically built when the test is built, unless the binary has required features that are not enabled.
-		# CARGO_PRIMARY_PACKAGE — This environment variable will be set if the package being built is primary. Primary packages are the ones the user selected on the command-line, either with -p flags or the defaults based on the current directory and the default workspace members. This environment variable will not be set when building dependencies. This is only set when compiling the package (not when running binaries or tests).
-		# CARGO_TARGET_TMPDIR — Only set when building integration test or benchmark code. This is a path to a directory inside the target directory where integration tests or benchmarks are free to put any data needed by the tests/benches. Cargo initially creates this directory but doesn’t manage its content in any way, this is the responsibility of the test code.
-	fi
+	# shellcheck disable=SC2129,SC2001
+	echo "ENV LD_LIBRARY_PATH='$(sed "s%'%%g" <<<"${LD_LIBRARY_PATH:-}" | tr -d '\n')'" >>"$dockerfile"
+	# https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-crates
+	# shellcheck disable=SC2001
+	echo "ENV CARGO='$(sed "s%'%%g" <<<"${CARGO:-}" | tr -d '\n')'" >>"$dockerfile"
+	# shellcheck disable=SC2001
+	echo "ENV CARGO_MANIFEST_DIR='$(sed "s%'%%g" <<<"${CARGO_MANIFEST_DIR:-}" | tr -d '\n')'" >>"$dockerfile"
+	# shellcheck disable=SC2001
+	echo "ENV CARGO_PKG_VERSION='$(sed "s%'%%g" <<<"${CARGO_PKG_VERSION:-}" | tr -d '\n')'" >>"$dockerfile"
+	# shellcheck disable=SC2001
+	echo "ENV CARGO_PKG_VERSION_MAJOR='$(sed "s%'%%g" <<<"${CARGO_PKG_VERSION_MAJOR:-}" | tr -d '\n')'" >>"$dockerfile"
+	# shellcheck disable=SC2001
+	echo "ENV CARGO_PKG_VERSION_MINOR='$(sed "s%'%%g" <<<"${CARGO_PKG_VERSION_MINOR:-}" | tr -d '\n')'" >>"$dockerfile"
+	# shellcheck disable=SC2001
+	echo "ENV CARGO_PKG_VERSION_PATCH='$(sed "s%'%%g" <<<"${CARGO_PKG_VERSION_PATCH:-}" | tr -d '\n')'" >>"$dockerfile"
+	# shellcheck disable=SC2001
+	echo "ENV CARGO_PKG_VERSION_PRE='$(sed "s%'%%g" <<<"${CARGO_PKG_VERSION_PRE:-}" | tr -d '\n')'" >>"$dockerfile"
+	# shellcheck disable=SC2001
+	echo "ENV CARGO_PKG_AUTHORS='$(sed "s%'%%g" <<<"${CARGO_PKG_AUTHORS:-}" | tr -d '\n')'" >>"$dockerfile"
+	# shellcheck disable=SC2001
+	echo "ENV CARGO_PKG_NAME='$(sed "s%'%%g" <<<"${CARGO_PKG_NAME:-}" | tr -d '\n')'" >>"$dockerfile"
+	# shellcheck disable=SC2001
+	echo "ENV CARGO_PKG_DESCRIPTION='$(sed "s%'%%g" <<<"${CARGO_PKG_DESCRIPTION:-}" | tr -d '\n')'" >>"$dockerfile"
+	# shellcheck disable=SC2001
+	echo "ENV CARGO_PKG_HOMEPAGE='$(sed "s%'%%g" <<<"${CARGO_PKG_HOMEPAGE:-}" | tr -d '\n')'" >>"$dockerfile"
+	# shellcheck disable=SC2001
+	echo "ENV CARGO_PKG_REPOSITORY='$(sed "s%'%%g" <<<"${CARGO_PKG_REPOSITORY:-}" | tr -d '\n')'" >>"$dockerfile"
+	# shellcheck disable=SC2001
+	echo "ENV CARGO_PKG_LICENSE='$(sed "s%'%%g" <<<"${CARGO_PKG_LICENSE:-}" | tr -d '\n')'" >>"$dockerfile"
+	# shellcheck disable=SC2001
+	echo "ENV CARGO_PKG_LICENSE_FILE='$(sed "s%'%%g" <<<"${CARGO_PKG_LICENSE_FILE:-}" | tr -d '\n')'" >>"$dockerfile"
+	# shellcheck disable=SC2001
+	echo "ENV CARGO_PKG_RUST_VERSION='$(sed "s%'%%g" <<<"${CARGO_PKG_RUST_VERSION:-}" | tr -d '\n')'" >>"$dockerfile"
+	# shellcheck disable=SC2001
+	echo "ENV CARGO_CRATE_NAME='$(sed "s%'%%g" <<<"${CARGO_CRATE_NAME:-}" | tr -d '\n')'" >>"$dockerfile"
+	# shellcheck disable=SC2001
+	echo "ENV CARGO_BIN_NAME='$(sed "s%'%%g" <<<"${CARGO_BIN_NAME:-}" | tr -d '\n')'" >>"$dockerfile"
+	# TODO: also maybe set ENVs in all calls to buildx.
+	# TODO: allow additional envs to be passed as RUSTCBUILDX_ENV_* env(s)
+	# OUT_DIR — If the package has a build script, this is set to the folder where the build script should place its output. See below for more information. (Only set during compilation.)
+	# CARGO_BIN_EXE_<name> — The absolute path to a binary target’s executable. This is only set when building an integration test or benchmark. This may be used with the env macro to find the executable to run for testing purposes. The <name> is the name of the binary target, exactly as-is. For example, CARGO_BIN_EXE_my-program for a binary named my-program. Binaries are automatically built when the test is built, unless the binary has required features that are not enabled.
+	# CARGO_PRIMARY_PACKAGE — This environment variable will be set if the package being built is primary. Primary packages are the ones the user selected on the command-line, either with -p flags or the defaults based on the current directory and the default workspace members. This environment variable will not be set when building dependencies. This is only set when compiling the package (not when running binaries or tests).
+	# CARGO_TARGET_TMPDIR — Only set when building integration test or benchmark code. This is a path to a directory inside the target directory where integration tests or benchmarks are free to put any data needed by the tests/benches. Cargo initially creates this directory but doesn’t manage its content in any way, this is the responsibility of the test code.
 
 	if [[ "${input_mount_name:-}" == '' ]]; then
 		if [[ -d "$PWD"/.git ]]; then
@@ -379,6 +407,7 @@ EOF
 	rmdir "$stdio" >/dev/null 2>&1 || true
 	if [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
 		rm /tmp/global.lock >/dev/null 2>&1
+		return $err
 	elif [[ $err -ne 0 ]]; then
 		args=()
 		for arg in "$@"; do
