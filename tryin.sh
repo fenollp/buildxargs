@@ -41,7 +41,7 @@ _rustc() {
 			[[ "$input" != '' ]] && return 4
 			input=$key
 			pair=E; key=''; val=''
-			# For e.g. /home/pete/.cargo/registry/src/github.com-1ecc6299db9ec823/ahash-0.7.6/./build.rs
+			# For e.g. $HOME/.cargo/registry/src/github.com-1ecc6299db9ec823/ahash-0.7.6/./build.rs
 			# shellcheck disable=SC2001
 			input=$(sed 's%/[.]/%/%g' <<<"$input")
 			continue ;;
@@ -107,9 +107,9 @@ _rustc() {
 			# https://github.com/dtolnay/cxx/blob/83d9d43892d9fe67dd031e4115ae38d0ef3c4712/gen/build/src/target.rs#L10
 			# https://github.com/rust-lang/cargo/issues/6100
 			# This doesn't always verify: case "$extern" in "$deps_path"/*) ;; *) return 4 ;; esac
-			# because $CARGO_TARGET_DIR is sometimes set to $PWD/target which is sometimes /home/pete/.cargo/registry/src/github.com-1ecc6299db9ec823/anstyle-parse-0.1.1
+			# because $CARGO_TARGET_DIR is sometimes set to $PWD/target which is sometimes $HOME/.cargo/registry/src/github.com-1ecc6299db9ec823/anstyle-parse-0.1.1
 			# So we can't do: externs+=("${extern#"$deps_path"/}")
-			# Anyway the goal is simply to just extract libutf8parse-03cddaef72c90e73.rmeta from /home/pete/wefwefwef/buildxargs.git/target/debug/deps/libutf8parse-03cddaef72c90e73.rmeta
+			# Anyway the goal is simply to just extract libutf8parse-03cddaef72c90e73.rmeta from $HOME/wefwefwef/buildxargs.git/target/debug/deps/libutf8parse-03cddaef72c90e73.rmeta
 			# So let's just do that!
 			externs+=("$(basename "$extern")")
 			;;
@@ -193,16 +193,6 @@ _rustc() {
 
 	local input_mount_name input_mount_target stage_name
 	case "$input" in
-	*/build.rs)
-		input_mount_name=input_build_rs--$(basename "${input%/build.rs}")
-		input_mount_target=${input%/build.rs}
-		stage_name=build_rs-$full_crate_id
-		;;
-	*/src/lib.rs)
-		input_mount_name=input_src_lib_rs--$(basename "${input%/src/lib.rs}")
-		input_mount_target=${input%/src/lib.rs}
-		stage_name=src_lib_rs-$full_crate_id
-		;;
 	src/lib.rs)
 		input_mount_name=''
 		input_mount_target=''
@@ -213,8 +203,31 @@ _rustc() {
 		input_mount_target=''
 		stage_name=final-$full_crate_id
 		;;
+	*/build.rs)
+		input_mount_name=input_build_rs--$(basename "${input%/build.rs}")
+		input_mount_target=${input%/build.rs}
+		stage_name=build_rs-$full_crate_id
+		;;
+	*/src/lib.rs)
+		input_mount_name=input_src_lib_rs--$(basename "${input%/src/lib.rs}")
+		input_mount_target=${input%/src/lib.rs}
+		stage_name=src_lib_rs-$full_crate_id
+		;;
+	*/lib.rs) # This ordering...
+		# e.g. $HOME/.cargo/registry/src/github.com-1ecc6299db9ec823/fnv-1.0.7/lib.rs
+		input_mount_name=input_lib_rs--$(basename "${input%/lib.rs}")
+		input_mount_target=${input%/lib.rs}
+		stage_name=lib_rs-$full_crate_id
+		;;
+	*/src/*.rs) # ...matters (input_mount_target)
+		# e.g. input=$HOME/.cargo/registry/src/github.com-1ecc6299db9ec823/untrusted-0.7.1/src/untrusted.rs
+		input_mount_name=input_src__rs--$(basename "${input%/src/*.rs}")
+		input_mount_target=${input%/src/*.rs}
+		stage_name=src__rs-$full_crate_id
+		;;
 	*) return 4 ;;
 	esac
+	[[ "$input_mount_target" != "$HOME/.cargo/registry" ]] || return 4
 
 	local backslash="\\"
 
