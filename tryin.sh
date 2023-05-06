@@ -238,8 +238,10 @@ _rustc() {
 		;;
 	*/src/*.rs) # ...matters (input_mount_target)
 		# e.g. input=$HOME/.cargo/registry/src/github.com-1ecc6299db9ec823/untrusted-0.7.1/src/untrusted.rs
-		input_mount_name=input_src__rs--$(basename "${input%/src/*.rs}")
-		input_mount_target=${input%/src/*.rs}
+		input_mount_target=$(dirname "$input")
+		input_mount_target=${input_mount_target%/src}
+		# ^ instead of: input_mount_target=${input%/src/*.rs}
+		input_mount_name=input_src__rs--$(basename "$input_mount_target")
 		stage_name=src__rs-$full_crate_id
 		;;
 	*) return 4 ;;
