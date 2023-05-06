@@ -1,6 +1,10 @@
 #!/bin/bash -eu
 # trash target >/dev/null 2>&1; shellcheck ./tryin.sh && PROFILE=debug CARGO_HOME=$HOME/.cargo CARGO_TARGET_DIR=$PWD/target RUSTC_WRAPPER=$PWD/tryin.sh cargo build --locked --frozen --offline --all-targets --all-features
 
+if [[ "CARGO_MANIFEST_DIR=${CARGO_MANIFEST_DIR:-}" == "${RUSTCBUILDX_DEBUG:-}" ]]; then
+	RUSTCBUILDX_DEBUG=1
+fi
+
 if [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
 	set -x
 fi
@@ -24,6 +28,7 @@ _rustc() {
 	local extra_filename=''
 	local incremental=''
 	local input=''
+	local l_native=''
 	local out_dir=''
 
 	local key=''; local val=''; local pair=''
@@ -64,9 +69,11 @@ _rustc() {
 		'-C linker=/usr/bin/clang')
 			pair=E; key=''; val=''
 			continue ;;
-		# remove coloring in output for readability during debug
 		'--json diagnostic-rendered-ansi,artifacts,future-incompat')
-			val='artifacts,future-incompat'
+			if [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
+				# remove coloring in output for readability during debug
+				val='artifacts,future-incompat'
+			fi
 			;;
 		esac
 
@@ -84,6 +91,12 @@ _rustc() {
 
 		if [[ "$key $val" =~ ^-L.dependency= ]]; then
 			case "${val#dependency=}" in /*) ;; *) val=dependency=$PWD/${val#dependency=} ;; esac
+		fi
+
+		if [[ "$key $val" =~ ^-L.native= ]]; then
+			case "${val#native=}" in /*) ;; *) return 4 ;; esac
+			[[ "$l_native" != '' ]] && return 4
+			l_native=${val#native=}
 		fi
 
 		case "$key" in
@@ -130,6 +143,7 @@ _rustc() {
 	[[ "$extra_filename" == '' ]] && return 4
 	# [[ "$incremental" == '' ]] && return 4 MAY be unset: only set on last calls
 	[[ "$input" == '' ]] && return 4
+	# [[ "$l_native" == '' ]] && return 4 MAY be unset: only set on calls that link to .a libs
 	[[ "$out_dir" == '' ]] && return 4
 
 	local full_crate_id
@@ -295,7 +309,7 @@ EOF
 	# CARGO_PRIMARY_PACKAGE — This environment variable will be set if the package being built is primary. Primary packages are the ones the user selected on the command-line, either with -p flags or the defaults based on the current directory and the default workspace members. This environment variable will not be set when building dependencies. This is only set when compiling the package (not when running binaries or tests).
 	# CARGO_TARGET_TMPDIR — Only set when building integration test or benchmark code. This is a path to a directory inside the target directory where integration tests or benchmarks are free to put any data needed by the tests/benches. Cargo initially creates this directory but doesn’t manage its content in any way, this is the responsibility of the test code.
 
-	if [[ "${input_mount_name:-}" == '' ]]; then
+	if [[ "$input_mount_name" == '' ]]; then
 		if [[ -d "$PWD"/.git ]]; then
 			cat <<EOF >>"$dockerfile"
 WORKDIR $PWD
@@ -320,6 +334,12 @@ EOF
 WORKDIR $PWD
 RUN $backslash
   --mount=type=bind,from=$input_mount_name,target=$input_mount_target $backslash
+EOF
+	fi
+
+	if [[ "$l_native" != '' ]]; then
+		cat <<EOF >>"$dockerfile"
+  --mount=type=bind,from=l_native,target=$l_native $backslash
 EOF
 	fi
 
@@ -350,8 +370,11 @@ COPY --from=$stage_name $out_dir/*$extra_filename* /
 EOF
 
 	declare -A contexts
-	if [[ "${input_mount_name:-}" != '' ]]; then
+	if [[ "$input_mount_name" != '' ]]; then
 		contexts["$input_mount_name"]=$input_mount_target
+	fi
+	if [[ "$l_native" != '' ]]; then
+		contexts['l_native']=$l_native
 	fi
 	if [[ ${#all_externs[@]} -ne 0 ]]; then
 		# TODO: check if gains are possible (we're binding a directory growing in size)
