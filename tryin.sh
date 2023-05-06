@@ -302,9 +302,9 @@ EOF
 	echo "ENV CARGO_CRATE_NAME='$(sed "s%'%%g" <<<"${CARGO_CRATE_NAME:-}" | tr -d '\n')'" >>"$dockerfile"
 	# shellcheck disable=SC2001
 	echo "ENV CARGO_BIN_NAME='$(sed "s%'%%g" <<<"${CARGO_BIN_NAME:-}" | tr -d '\n')'" >>"$dockerfile"
-	# TODO: also maybe set ENVs in all calls to buildx.
 	# TODO: allow additional envs to be passed as RUSTCBUILDX_ENV_* env(s)
-	# OUT_DIR — If the package has a build script, this is set to the folder where the build script should place its output. See below for more information. (Only set during compilation.)
+	# shellcheck disable=SC2001
+	echo "ENV OUT_DIR='$(sed "s%'%%g" <<<"${OUT_DIR:-}" | tr -d '\n')'" >>"$dockerfile" # (Only set during compilation.)
 	# CARGO_BIN_EXE_<name> — The absolute path to a binary target’s executable. This is only set when building an integration test or benchmark. This may be used with the env macro to find the executable to run for testing purposes. The <name> is the name of the binary target, exactly as-is. For example, CARGO_BIN_EXE_my-program for a binary named my-program. Binaries are automatically built when the test is built, unless the binary has required features that are not enabled.
 	# CARGO_PRIMARY_PACKAGE — This environment variable will be set if the package being built is primary. Primary packages are the ones the user selected on the command-line, either with -p flags or the defaults based on the current directory and the default workspace members. This environment variable will not be set when building dependencies. This is only set when compiling the package (not when running binaries or tests).
 	# CARGO_TARGET_TMPDIR — Only set when building integration test or benchmark code. This is a path to a directory inside the target directory where integration tests or benchmarks are free to put any data needed by the tests/benches. Cargo initially creates this directory but doesn’t manage its content in any way, this is the responsibility of the test code.
