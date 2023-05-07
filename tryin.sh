@@ -216,6 +216,12 @@ _rustc() {
 			printf "%s\n" "${short_externs[@]}" >"$crate_externs"
 		fi
 	fi
+	if [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
+		if [[ -s "$crate_externs" ]]; then
+			echo "$crate_externs" >&2
+			cat  "$crate_externs" >&2 || true
+		fi
+	fi
 
 	mkdir -p "$out_dir"
 	[[ "$incremental" != '' ]] && mkdir -p "$incremental"
