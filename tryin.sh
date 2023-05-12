@@ -343,7 +343,7 @@ EOF
 		echo "ENV RUSTUP_TOOLCHAIN='$toolchain'" >>"$dockerfile"
 	fi
 
-	if [[ "$input_mount_name" == '' ]]; then
+	if [[ "$input" =~ ^[^/]+(/[^/]+){0,2}.rs$ ]]; then
 		if [[ -d "$PWD"/.git ]]; then
 			cat <<EOF >>"$dockerfile"
 WORKDIR $PWD
@@ -364,6 +364,7 @@ RUN $backslash
 EOF
 		fi
 	else
+		[[ "$input_mount_name" == '' ]] && return 4
 		cat <<EOF >>"$dockerfile"
 WORKDIR $PWD
 RUN $backslash
