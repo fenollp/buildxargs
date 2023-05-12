@@ -377,9 +377,15 @@ EOF
 EOF
 	fi
 
+	local tmp_deps_path
+	tmp_deps_path=$(mktemp -d)
 	for extern in "${all_externs[@]}"; do
+		# TODO: find a way to provide tmpdeps context directory
+		#   without the need to create a tempdir on disk.
+		# (failed to get build context path   not a directory)
+		cp "$target_path/deps/$extern" "$tmp_deps_path"
 		cat <<EOF >>"$dockerfile"
-  --mount=type=bind,from=deps,source=/$extern,target=$target_path/deps/$extern $backslash
+  --mount=type=bind,from=tmpdeps,source=/$extern,target=$target_path/deps/$extern $backslash
 EOF
 	done
 
@@ -411,8 +417,7 @@ EOF
 		contexts['crate-out']=$crate_out
 	fi
 	if [[ ${#all_externs[@]} -ne 0 ]]; then
-		# TODO: check if gains are possible (we're binding a directory growing in size)
-		contexts['deps']=$target_path/deps
+		contexts['tmpdeps']=$tmp_deps_path
 	fi
 	contexts['rust']=$RUSTCBUILDX_DOCKER_IMAGE
 
@@ -467,14 +472,20 @@ EOF
 	fi
 	err=$?
 	set -e
-	rm "$bake_hcl"
 	if [[ $err -eq 0 ]]; then
 		cat "$stdio/stderr" >&2
 		cat "$stdio/stdout"
 	fi
-	rm "$stdio/stderr" >/dev/null 2>&1 || true
-	rm "$stdio/stdout" >/dev/null 2>&1 || true
-	rmdir "$stdio" >/dev/null 2>&1 || true
+	if ! [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
+		rm "$bake_hcl"
+		for extern in "${all_externs[@]}"; do
+			rm "$tmp_deps_path/$extern"
+		done
+		rmdir "$tmp_deps_path"
+		rm "$stdio/stderr" >/dev/null 2>&1 || true
+		rm "$stdio/stdout" >/dev/null 2>&1 || true
+		rmdir "$stdio" >/dev/null 2>&1 || true
+	fi
 	if [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
 		rm /tmp/global.lock >/dev/null 2>&1
 		return $err
