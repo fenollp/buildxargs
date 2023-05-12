@@ -35,7 +35,7 @@ _rustc() {
 			pair=E; key=${arg%=*}; val=${arg#*=}
 		fi
 
-		case "$key" in /*|src/lib.rs|src/main.rs)
+		case "$key" in /*|src/lib.rs|src/main.rs|*/src/lib.rs)
 			[[ "$input" != '' ]] && return 4
 			input=$key
 			pair=E; key=''; val=''
@@ -264,7 +264,7 @@ _rustc() {
 		;;
 	*) return 4 ;;
 	esac
-	[[ "$input_mount_target" != "$HOME/.cargo/registry" ]] || return 4
+	[[ "$input_mount_target" == "$HOME/.cargo/registry" ]] && return 4
 
 	local backslash="\\"
 
