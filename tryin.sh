@@ -304,7 +304,7 @@ EOF
 			done < <(git ls-files "$PWD" | sort)
 		else
 			while read -r f; do
-				f=${f#$PWD}
+				f=${f#"$PWD"}
 				mkdir -p "$cwd/$(dirname "$f")"
 				cp "$f" "$cwd/$f"
 			done < <(find "$PWD" -type f | sort)
