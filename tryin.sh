@@ -268,6 +268,12 @@ _rustc() {
 
 	local backslash="\\"
 
+	# RUSTCBUILDX_DOCKER_IMAGE MUST start with docker-image:// and image MUST be available on DOCKER_HOST e.g.:
+	# RUSTCBUILDX_DOCKER_IMAGE=docker-image://rustc_with_libs
+	# DOCKER_HOST=ssh://oomphy docker buildx build -t rustc_with_libs - <<EOF
+	# FROM docker.io/library/rust:1.69.0-slim@sha256:8b85a8a6bf7ed968e24bab2eae6f390d2c9c8dbed791d3547fef584000f48f9e
+	# RUN set -eux && apt update && apt install -y libpq-dev libssl-dev
+	# EOF
 	RUSTCBUILDX_DOCKER_IMAGE=${RUSTCBUILDX_DOCKER_IMAGE:-docker-image://docker.io/library/rust:1.69.0-slim@sha256:8b85a8a6bf7ed968e24bab2eae6f390d2c9c8dbed791d3547fef584000f48f9e} # rustc 1.69.0 (84c898d65 2023-04-16)
 	RUSTCBUILDX_DOCKER_SYNTAX=${RUSTCBUILDX_DOCKER_SYNTAX:-docker.io/docker/dockerfile:1@sha256:39b85bbfa7536a5feceb7372a0817649ecb2724562a38360f4d6a7782a409b14}
 
