@@ -288,26 +288,26 @@ WORKDIR $incremental
 EOF
 	fi
 
+	local cwd=''
 	if [[ "$input" =~ ^[^/]+(/[^/]+){0,2}.rs$ ]]; then
+		cwd=$(mktemp -d) # TODO: use tmpfs when on *NIX
 		if [[ -d "$PWD"/.git ]]; then
-			cat <<EOF >>"$dockerfile"
-WORKDIR $PWD
-EOF
 			while read -r f; do
-			cat <<EOF >>"$dockerfile"
-COPY $f $(dirname "$f")/
-EOF
+				mkdir -p "$cwd/$(dirname "$f")"
+				cp "$f" "$cwd/$f"
 			done < <(git ls-files "$PWD" | sort)
-			cat <<EOF >>"$dockerfile"
-RUN $backslash
-EOF
 		else
-			cat <<EOF >>"$dockerfile"
+			while read -r f; do
+				f=${f#$PWD}
+				mkdir -p "$cwd/$(dirname "$f")"
+				cp "$f" "$cwd/$f"
+			done < <(find "$PWD" -type f | sort)
+		fi
+		cat <<EOF >>"$dockerfile"
 WORKDIR $PWD
-COPY . .
+COPY --from=cwd / .
 RUN $backslash
 EOF
-		fi
 	else
 		[[ "$input_mount_name" == '' ]] && return 4
 		cat <<EOF >>"$dockerfile"
@@ -414,6 +414,9 @@ EOF
 	if [[ "$input_mount_name" != '' ]]; then
 		contexts["$input_mount_name"]=$input_mount_target
 	fi
+	if [[ "$cwd" != '' ]]; then
+		contexts['cwd']=$cwd
+	fi
 	if [[ "$crate_out" != '' ]]; then
 		contexts['crate-out']=$crate_out
 	fi
@@ -426,7 +429,6 @@ EOF
 	bake_hcl=$(mktemp)
 	cat <<EOF >"$bake_hcl"
 target "out" {
-	context = "$PWD"
 	contexts = {
 $(for name in "${!contexts[@]}"; do
 	printf '\t\t"%s" = "%s",\n' "$name" "${contexts[$name]}"
@@ -486,6 +488,7 @@ EOF
 		rm "$stdio/stderr" >/dev/null 2>&1 || true
 		rm "$stdio/stdout" >/dev/null 2>&1 || true
 		rmdir "$stdio" >/dev/null 2>&1 || true
+		[[ "$cwd" != '' ]] && rm -r "${cwd:?}/"
 	fi
 	if [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
 		rm /tmp/global.lock >/dev/null 2>&1
