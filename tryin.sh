@@ -226,33 +226,33 @@ _rustc() {
 	mkdir -p "$out_dir"
 	[[ "$incremental" != '' ]] && mkdir -p "$incremental"
 
-	local input_mount_name input_mount_target stage_name
+	local input_mount_name input_mount_target rustc_stage
 	case "$input" in
 	src/lib.rs)
 		input_mount_name=''
 		input_mount_target=''
-		stage_name=final-$full_crate_id
+		rustc_stage=final-$full_crate_id
 		;;
 	src/main.rs)
 		input_mount_name=''
 		input_mount_target=''
-		stage_name=final-$full_crate_id
+		rustc_stage=final-$full_crate_id
 		;;
 	*/build.rs)
 		input_mount_name=input_build_rs--$(basename "${input%/build.rs}")
 		input_mount_target=${input%/build.rs}
-		stage_name=build_rs-$full_crate_id
+		rustc_stage=build_rs-$full_crate_id
 		;;
 	*/src/lib.rs)
 		input_mount_name=input_src_lib_rs--$(basename "${input%/src/lib.rs}")
 		input_mount_target=${input%/src/lib.rs}
-		stage_name=src_lib_rs-$full_crate_id
+		rustc_stage=src_lib_rs-$full_crate_id
 		;;
 	*/lib.rs) # This ordering...
 		# e.g. $HOME/.cargo/registry/src/github.com-1ecc6299db9ec823/fnv-1.0.7/lib.rs
 		input_mount_name=input_lib_rs--$(basename "${input%/lib.rs}")
 		input_mount_target=${input%/lib.rs}
-		stage_name=lib_rs-$full_crate_id
+		rustc_stage=lib_rs-$full_crate_id
 		;;
 	*/src/*.rs) # ...matters (input_mount_target)
 		# e.g. input=$HOME/.cargo/registry/src/github.com-1ecc6299db9ec823/untrusted-0.7.1/src/untrusted.rs
@@ -260,7 +260,7 @@ _rustc() {
 		input_mount_target=${input_mount_target%/src}
 		# ^ instead of: input_mount_target=${input%/src/*.rs}
 		input_mount_name=input_src__rs--$(basename "$input_mount_target")
-		stage_name=src__rs-$full_crate_id
+		rustc_stage=src__rs-$full_crate_id
 		;;
 	*) return 4 ;;
 	esac
@@ -284,7 +284,7 @@ _rustc() {
 	cat <<EOF >"$dockerfile"
 # syntax=$RUSTCBUILDX_DOCKER_SYNTAX
 
-FROM rust AS $stage_name
+FROM rust AS $rustc_stage
 WORKDIR $out_dir
 EOF
 
@@ -402,18 +402,21 @@ EOF
 	done
 	printf ' %s >/stdout 2>/stderr; then head /std???; exit 1; fi\n' "$input" >>"$dockerfile"
 
+	local incremental_stage=incremental$extra_filename
+	local stdio_stage=stdio$extra_filename
+	local out_stage=out$extra_filename
 	if [[ "$incremental" != '' ]]; then
 		cat <<EOF >>"$dockerfile"
-FROM scratch AS incremental
-COPY --from=$stage_name $incremental /
+FROM scratch AS $incremental_stage
+COPY --from=$rustc_stage $incremental /
 EOF
 	fi
 	cat <<EOF >>"$dockerfile"
-FROM scratch AS stdio
-COPY --from=$stage_name /stderr /
-COPY --from=$stage_name /stdout /
-FROM scratch AS out
-COPY --from=$stage_name $out_dir/*$extra_filename* /
+FROM scratch AS $stdio_stage
+COPY --from=$rustc_stage /stderr /
+COPY --from=$rustc_stage /stdout /
+FROM scratch AS $out_stage
+COPY --from=$rustc_stage $out_dir/*$extra_filename* /
 EOF
 
 	declare -A contexts
@@ -434,7 +437,7 @@ EOF
 	local bake_hcl
 	bake_hcl=$(mktemp)
 	cat <<EOF >"$bake_hcl"
-target "out" {
+target "$out_stage" {
 	contexts = {
 $(for name in "${!contexts[@]}"; do
 	printf '\t\t"%s" = "%s",\n' "$name" "${contexts[$name]}"
@@ -446,27 +449,24 @@ DOCKERFILE
 	network = "none"
 	output = ["$out_dir"] # https://github.com/moby/buildkit/issues/1224
 	platforms = ["local"]
-	target = "out"
+	target = "$out_stage"
 }
-target "stdio" {
-	inherits = ["out"]
+target "$stdio_stage" {
+	inherits = ["$out_stage"]
 	output = ["$stdio"]
-	target = "stdio"
+	target = "$stdio_stage"
 }
 EOF
 	rm "$dockerfile"
 
-	if [[ "$incremental" == '' ]]; then
+	local stages=("$out_stage" "$stdio_stage")
+	if [[ "$incremental" != '' ]]; then
+		stages+=("$incremental_stage")
 		cat <<EOF >>"$bake_hcl"
-group "default" { targets = ["out", "stdio"] }
-EOF
-	else
-		cat <<EOF >>"$bake_hcl"
-group "default" { targets = ["out", "stdio", "incremental"] }
-target "incremental" {
-	inherits = ["out"]
+target "$incremental_stage" {
+	inherits = ["$out_stage"]
 	output = ["$incremental"]
-	target = "incremental"
+	target = "$incremental_stage"
 }
 EOF
 	fi
@@ -475,9 +475,9 @@ EOF
 	set +e
 	if [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
 		cat "$bake_hcl" >&2
-		docker --debug buildx bake --file=- <"$bake_hcl" >&2
+		docker --debug buildx bake --file=- "${stages[@]}" <"$bake_hcl" >&2
 	else
-		docker         buildx bake --file=- <"$bake_hcl" >/dev/null 2>&1
+		docker         buildx bake --file=- "${stages[@]}" <"$bake_hcl" >/dev/null 2>&1
 	fi
 	err=$?
 	set -e
