@@ -268,6 +268,18 @@ _rustc() {
 
 	local backslash="\\"
 
+	local incremental_stage=incremental$extra_filename
+	local out_stage=out$extra_filename
+	local stdio_stage=stdio$extra_filename
+	local toolchain_stage=''
+	if [[ "$input_mount_target" != '' ]] && [[ -s "$input_mount_target"/rust-toolchain ]]; then
+		# https://rust-lang.github.io/rustup/overrides.html
+		# NOTE: without this, the crate's rust-toolchain gets installed and used and (for the mentioned crate)
+		#   fails due to (yet)unknown rustc CLI arg: `error: Unrecognized option: 'diagnostic-width'`
+		# e.g. https://github.com/xacrimon/dashmap/blob/v5.4.0/rust-toolchain
+		toolchain_stage=toolchain$extra_filename
+	fi
+
 	# RUSTCBUILDX_DOCKER_IMAGE MUST start with docker-image:// and image MUST be available on DOCKER_HOST e.g.:
 	# RUSTCBUILDX_DOCKER_IMAGE=docker-image://rustc_with_libs
 	# DOCKER_HOST=ssh://oomphy docker buildx build -t rustc_with_libs - <<EOF
@@ -283,7 +295,16 @@ _rustc() {
 	stdio=$(mktemp -d)
 	cat <<EOF >"$dockerfile"
 # syntax=$RUSTCBUILDX_DOCKER_SYNTAX
+EOF
 
+	if [[ "$toolchain_stage" != '' ]]; then
+		cat <<EOF >>"$dockerfile"
+FROM rust AS $toolchain_stage
+RUN rustup default | cut -d- -f1 >/rustup-toolchain
+EOF
+	fi
+
+	cat <<EOF >>"$dockerfile"
 FROM rust AS $rustc_stage
 WORKDIR $out_dir
 EOF
@@ -326,6 +347,12 @@ EOF
 	if [[ "$crate_out" != '' ]]; then
 		cat <<EOF >>"$dockerfile"
   --mount=type=bind,from=crate-out,target=$crate_out $backslash
+EOF
+	fi
+
+	if [[ "$toolchain_stage" != '' ]]; then
+		cat <<EOF >>"$dockerfile"
+  --mount=type=bind,from=$toolchain_stage,source=/rustup-toolchain,target=/rustup-toolchain $backslash
 EOF
 	fi
 
@@ -385,15 +412,8 @@ EOF
 	# CARGO_PRIMARY_PACKAGE — This environment variable will be set if the package being built is primary. Primary packages are the ones the user selected on the command-line, either with -p flags or the defaults based on the current directory and the default workspace members. This environment variable will not be set when building dependencies. This is only set when compiling the package (not when running binaries or tests).
 	# CARGO_TARGET_TMPDIR — Only set when building integration test or benchmark code. This is a path to a directory inside the target directory where integration tests or benchmarks are free to put any data needed by the tests/benches. Cargo initially creates this directory but doesn’t manage its content in any way, this is the responsibility of the test code.
 
-	if [[ "$input_mount_target" != '' ]] && [[ -s "$input_mount_target"/rust-toolchain ]]; then
-		# https://rust-lang.github.io/rustup/overrides.html
-		# NOTE: without this, the crate's rust-toolchain gets installed and used and (for the mentioned crate)
-		#   fails due to (yet)unknown rustc CLI arg: `error: Unrecognized option: 'diagnostic-width'`
-		# e.g. https://github.com/xacrimon/dashmap/blob/v5.4.0/rust-toolchain
-		local toolchain=''
-		toolchain=$(docker run --rm "${RUSTCBUILDX_DOCKER_IMAGE#docker-image://}" rustup default | cut -d- -f1)
-		[[ "$toolchain" == '' ]] && return 4
-		echo "    export RUSTUP_TOOLCHAIN='$toolchain' && $backslash" >>"$dockerfile"
+	if [[ "$toolchain_stage" != '' ]]; then
+		echo "    export RUSTUP_TOOLCHAIN=\"\$(cat /rustup-toolchain)\" && $backslash" >>"$dockerfile"
 	fi
 
 	printf '    if ! rustc' >>"$dockerfile"
@@ -402,9 +422,6 @@ EOF
 	done
 	printf ' %s >/stdout 2>/stderr; then head /std???; exit 1; fi\n' "$input" >>"$dockerfile"
 
-	local incremental_stage=incremental$extra_filename
-	local stdio_stage=stdio$extra_filename
-	local out_stage=out$extra_filename
 	if [[ "$incremental" != '' ]]; then
 		cat <<EOF >>"$dockerfile"
 FROM scratch AS $incremental_stage
