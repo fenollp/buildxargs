@@ -11,7 +11,10 @@ fi
 
 _rustc() {
 	if [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
-		until (set -o noclobber; echo >/tmp/global.lock) >/dev/null 2>&1; do sleep .5; done
+		until (set -o noclobber; echo >/tmp/global.lock) >/dev/null 2>&1; do
+			[[ "$(( "$(date +%s)" - "$(stat -c %Y scaleway.pem)" ))" -ge 60 ]] && return 4
+			sleep .5
+		done
 	fi
 
 	local args=()
