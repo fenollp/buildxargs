@@ -451,8 +451,7 @@ EOF
 	fi
 	contexts['rust']=$RUSTCBUILDX_DOCKER_IMAGE
 
-	local bake_hcl
-	bake_hcl=$(mktemp)
+	local bake_hcl=$target_path/$crate_name$extra_filename.Dockerfile
 	cat <<EOF >"$bake_hcl"
 target "$out_stage" {
 	contexts = {
@@ -503,7 +502,7 @@ EOF
 		cat "$stdio/stdout"
 	fi
 	if ! [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
-		rm "$bake_hcl"
+		# rm "$bake_hcl"
 		for extern in "${all_externs[@]}"; do
 			rm "$tmp_deps_path/$extern"
 		done
