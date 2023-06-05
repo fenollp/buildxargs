@@ -5,7 +5,7 @@ use std::io::{stderr, stdin, BufRead, BufReader, Write};
 use std::process::{Command, ExitStatus};
 use tempfile::NamedTempFile;
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
+type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about=None)]
@@ -40,7 +40,7 @@ struct CliArgs {
     retry: u8,
 }
 
-fn main() -> Result<()> {
+fn main() -> Res<()> {
     let args = CliArgs::parse();
 
     let blanks = |line: &String| !line.trim().is_empty();
@@ -48,14 +48,14 @@ fn main() -> Result<()> {
         stdin()
             .lock()
             .lines()
-            .filter_map(std::result::Result::ok)
+            .map_while(Result::ok)
             .filter(blanks)
             .collect()
     } else {
         let file = File::open(&args.file)?;
         BufReader::new(file)
             .lines()
-            .filter_map(std::result::Result::ok)
+            .map_while(Result::ok)
             .filter(blanks)
             .collect()
     };
@@ -74,7 +74,7 @@ fn main() -> Result<()> {
     let ixs_failed = try_quick(
         &targets,
         args.retry,
-        |targets: &[DockerBuildArgs]| -> Result<()> {
+        |targets: &[DockerBuildArgs]| -> Res<()> {
             let prefix = "command `docker buildx bake`";
             let status = run_bake(&args, targets)?;
             match status.code() {
@@ -115,7 +115,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Result<ExitStatus> {
+fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Res<ExitStatus> {
     let mut command = Command::new("docker");
     command.env("DOCKER_BUILDKIT", "1");
     command.arg("buildx");
@@ -141,7 +141,7 @@ fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Result<ExitStatus> {
     Ok(command.status()?)
 }
 
-fn parse_shell_commands(cmds: &[String]) -> Result<Vec<DockerBuildArgs>> {
+fn parse_shell_commands(cmds: &[String]) -> Res<Vec<DockerBuildArgs>> {
     let mut targets = Vec::with_capacity(cmds.len());
     for cmd in cmds {
         match shlex::split(cmd) {
@@ -160,7 +160,7 @@ fn parse_shell_commands(cmds: &[String]) -> Result<Vec<DockerBuildArgs>> {
     Ok(targets)
 }
 
-fn write_as_buildx_bake(f: &mut impl Write, targets: &[DockerBuildArgs]) -> Result<()> {
+fn write_as_buildx_bake(f: &mut impl Write, targets: &[DockerBuildArgs]) -> Res<()> {
     writeln!(f, "group \"default\" {{\n  targets = [")?;
     for i in 1..=targets.len() {
         writeln!(f, "    \"{i}\",")?;
