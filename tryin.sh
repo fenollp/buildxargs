@@ -454,8 +454,8 @@ EOF
 	fi
 	contexts['rust']=$RUSTCBUILDX_DOCKER_IMAGE
 
-	local bake_hcl=$target_path/$crate_name$extra_filename.Dockerfile
-	cat <<EOF >"$bake_hcl"
+	local bakefile=$target_path/$crate_name$extra_filename.hcl
+	cat <<EOF >"$bakefile"
 target "$out_stage" {
 	contexts = {
 $(for name in "${!contexts[@]}"; do
@@ -481,7 +481,7 @@ EOF
 	local stages=("$out_stage" "$stdio_stage")
 	if [[ "$incremental" != '' ]]; then
 		stages+=("$incremental_stage")
-		cat <<EOF >>"$bake_hcl"
+		cat <<EOF >>"$bakefile"
 target "$incremental_stage" {
 	inherits = ["$out_stage"]
 	output = ["$incremental"]
@@ -492,11 +492,12 @@ EOF
 
 	err=0
 	set +e
+	# https://docs.docker.com/engine/reference/commandline/buildx_bake/#file
 	if [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
-		cat "$bake_hcl" >&2
-		docker --debug buildx bake --file=- "${stages[@]}" <"$bake_hcl" >&2
+		cat "$bakefile" >&2
+		docker --debug buildx bake --file=- "${stages[@]}" <"$bakefile" >&2
 	else
-		docker         buildx bake --file=- "${stages[@]}" <"$bake_hcl" >/dev/null 2>&1
+		docker         buildx bake --file=- "${stages[@]}" <"$bakefile" >/dev/null 2>&1
 	fi
 	err=$?
 	set -e
@@ -505,7 +506,7 @@ EOF
 		cat "$stdio/stdout"
 	fi
 	if ! [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
-		# rm "$bake_hcl"
+		# rm "$bakefile"
 		for extern in "${all_externs[@]}"; do
 			rm "$tmp_deps_path/$extern"
 		done
