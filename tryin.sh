@@ -343,9 +343,19 @@ RUN $backslash
 EOF
 	fi
 
+	crate_out_name() {
+		local name=$1; shift
+		# name=/home/pete/wefwefwef/buildxargs.git/target/debug/build/quote-adce79444856d618/out
+		name=${name##*-}
+		# name=adce79444856d618/out
+		name=${name%%/out}
+		# name=adce79444856d618
+		echo "crate_out-$name"
+	}
+
 	if [[ "$crate_out" != '' ]]; then
 		cat <<EOF >>"$dockerfile"
-  --mount=type=bind,from=crate-out,target=$crate_out $backslash
+  --mount=type=bind,from=$(crate_out_name "$crate_out"),target=$crate_out $backslash
 EOF
 	fi
 
@@ -455,7 +465,7 @@ EOF
 		contexts['cwd']=$cwd
 	fi
 	if [[ "$crate_out" != '' ]]; then
-		contexts['crate-out']=$crate_out
+		contexts["$(crate_out_name "$crate_out")"]=$crate_out
 	fi
 	contexts['rust']=$RUSTCBUILDX_DOCKER_IMAGE
 
@@ -472,7 +482,7 @@ EOF
 			mount_name=$(cut -d'"' -f2 <<<"$mount_name")
 			target=$(cut -d'"' -f2 <<<"$target")
 			contexts["$mount_name"]="$target"
-		done < <(grep -E '"input_' "$extern_bakefile")
+		done < <(grep -E '^\s+"input_|^\s+"crate_out-' "$extern_bakefile")
 
 		local extern_dockerfile=$extern_bakefile
 		extern_dockerfile=${extern_dockerfile##*/}
