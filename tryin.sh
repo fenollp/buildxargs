@@ -400,7 +400,7 @@ EOF
 	# shellcheck disable=SC2001
 	echo "    export CARGO_PKG_NAME='$(sed "s%'%%g" <<<"${CARGO_PKG_NAME:-}" | tr -d '\n')' && $backslash" >>"$dockerfile"
 	# shellcheck disable=SC2001
-	echo "    export CARGO_PKG_DESCRIPTION='$(sed "s%'%%g" <<<"${CARGO_PKG_DESCRIPTION:-}" | tr -d '\n')' && $backslash" >>"$dockerfile"
+	echo "    export CARGO_PKG_DESCRIPTION='$(sed "s%'%%g" <<<"${CARGO_PKG_DESCRIPTION:-}" | tr -d '\n' | tr -d '`')' && $backslash" >>"$dockerfile"
 	# shellcheck disable=SC2001
 	echo "    export CARGO_PKG_HOMEPAGE='$(sed "s%'%%g" <<<"${CARGO_PKG_HOMEPAGE:-}" | tr -d '\n')' && $backslash" >>"$dockerfile"
 	# shellcheck disable=SC2001
