@@ -1,5 +1,5 @@
 #!/bin/bash -eu
-# trash target >/dev/null 2>&1; shellcheck ./tryin.sh && PROFILE=debug CARGO_HOME=$HOME/.cargo CARGO_TARGET_DIR=$PWD/target RUSTC_WRAPPER=$PWD/tryin.sh cargo build --locked --frozen --offline --all-targets --all-features
+# trash target /tmp/global.lock >/dev/null 2>&1; shellcheck ./tryin.sh && PROFILE=debug CARGO_HOME=$HOME/.cargo CARGO_TARGET_DIR=$PWD/target RUSTC_WRAPPER=$PWD/tryin.sh cargo build --locked --frozen --offline --all-targets --all-features
 
 if [[ "CARGO_MANIFEST_DIR=${CARGO_MANIFEST_DIR:-}" == "${RUSTCBUILDX_DEBUG:-}" ]]; then
 	RUSTCBUILDX_DEBUG=1
@@ -12,7 +12,7 @@ fi
 _rustc() {
 	if [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
 		until (set -o noclobber; echo >/tmp/global.lock) >/dev/null 2>&1; do
-			[[ "$(( "$(date +%s)" - "$(stat -c %Y scaleway.pem)" ))" -ge 60 ]] && return 4
+			[[ "$(( "$(date +%s)" - "$(stat -c %Y /tmp/global.lock)" ))" -ge 60 ]] && return 4
 			sleep .5
 		done
 	fi
@@ -120,7 +120,7 @@ _rustc() {
 		'--out-dir '*)
 			[[ "$out_dir" != '' ]] && return 4
 			out_dir=$val
-			case "$out_dir" in /*) ;; *) out_dir=$PWD/$out_dir ;; esac
+			case "$out_dir" in /*) ;; *) out_dir=$PWD/$out_dir ;; esac # TODO: decide whether $PWD is an issue. Maybe CARGO_TARGET_DIR can help?
 			val=$out_dir
 			;;
 		esac
@@ -439,6 +439,7 @@ FROM scratch AS $out_stage
 COPY --from=$rustc_stage $out_dir/*$extra_filename* /
 EOF
 
+
 	declare -A contexts
 	if [[ "$input_mount_name" != '' ]]; then
 		contexts["$input_mount_name"]=$input_mount_target
@@ -455,10 +456,13 @@ EOF
 	contexts['rust']=$RUSTCBUILDX_DOCKER_IMAGE
 
 	local bakefile=$target_path/$crate_name$extra_filename.hcl
+	local platform=local
+	local stdio
+	stdio=$(mktemp -d)
 	cat <<EOF >"$bakefile"
 target "$out_stage" {
 	contexts = {
-$(for name in "${!contexts[@]}"; do
+$(for name in "${!contexts[@]}"; do # TODO: sort keys
 	printf '\t\t"%s" = "%s",\n' "$name" "${contexts[$name]}"
 done)
 	}
@@ -467,7 +471,7 @@ $(cat "$dockerfile")
 DOCKERFILE
 	network = "none"
 	output = ["$out_dir"] # https://github.com/moby/buildkit/issues/1224
-	platforms = ["local"]
+	platforms = ["$platform"]
 	target = "$out_stage"
 }
 target "$stdio_stage" {
@@ -546,7 +550,7 @@ fi
 
 
 # Reproduce a working build: (main @ db53336) (docker buildx version: github.com/docker/buildx v0.10.4 c513d34) linux/amd64
-# trash _target >/dev/null 2>&1; shellcheck ./tryin.sh && if RUSTCBUILDX_DEBUG=1 CARGO_TARGET_DIR=$PWD/_target ./tryin.sh; then echo YAY; else echo FAILED && tree _target; fi
+# trash _target /tmp/global.lock >/dev/null 2>&1; shellcheck ./tryin.sh && if RUSTCBUILDX_DEBUG=1 CARGO_TARGET_DIR=$PWD/_target ./tryin.sh; then echo YAY; else echo FAILED && tree _target; fi
 
 CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}
 PROFILE=${PROFILE:-debug}
