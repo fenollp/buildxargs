@@ -12,7 +12,7 @@ fi
 _rustc() {
 	if [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
 		until (set -o noclobber; echo >/tmp/global.lock) >/dev/null 2>&1; do
-			[[ "$(( "$(date +%s)" - "$(stat -c %Y /tmp/global.lock)" ))" -ge 60 ]] && return 4
+			[[ "$(( "$(date +%s)" - "$(stat -c %Y /tmp/global.lock)" ))" -ge 31 ]] && return 4
 			sleep .5
 		done
 	fi
