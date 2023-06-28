@@ -292,13 +292,9 @@ _rustc() {
 	RUSTCBUILDX_DOCKER_IMAGE=${RUSTCBUILDX_DOCKER_IMAGE:-docker-image://docker.io/library/rust:1.69.0-slim@sha256:8b85a8a6bf7ed968e24bab2eae6f390d2c9c8dbed791d3547fef584000f48f9e} # rustc 1.69.0 (84c898d65 2023-04-16)
 	RUSTCBUILDX_DOCKER_SYNTAX=${RUSTCBUILDX_DOCKER_SYNTAX:-docker.io/docker/dockerfile:1@sha256:39b85bbfa7536a5feceb7372a0817649ecb2724562a38360f4d6a7782a409b14}
 
-	local dockerfile
-	dockerfile=$(mktemp)
-	local stdio
-	stdio=$(mktemp -d)
-	cat <<EOF >"$dockerfile"
-# syntax=$RUSTCBUILDX_DOCKER_SYNTAX
-EOF
+
+	local dockerfile=$target_path/${extra_filename#-}.Dockerfile
+	printf '# syntax=%s\n' "$RUSTCBUILDX_DOCKER_SYNTAX" >"$dockerfile"
 
 	if [[ "$toolchain_stage" != '' ]]; then
 		cat <<EOF >>"$dockerfile"
@@ -359,15 +355,26 @@ EOF
 EOF
 	fi
 
-	local tmp_deps_path
-	tmp_deps_path=$(mktemp -d)
+	local bakefiles=()
 	for extern in "${all_externs[@]}"; do
-		# TODO: find a way to provide tmpdeps context directory
-		#   without the need to create a tempdir on disk.
-		# (failed to get build context path   not a directory)
-		cp "$target_path/deps/$extern" "$tmp_deps_path"
+		local extern_bakefile=$extern
+		# extern_bakefile=libstrsim-8ed1051e7e58e636.rlib
+		extern_bakefile="${extern_bakefile##lib}"
+		# extern_bakefile=strsim-8ed1051e7e58e636.rlib
+		extern_bakefile="${extern_bakefile%%.*}"
+		# extern_bakefile=strsim-8ed1051e7e58e636
+		local extern_bakefile_stage=$extern_bakefile
+		extern_bakefile_stage="${extern_bakefile_stage##*-}"
+		# extern_bakefile_stage=8ed1051e7e58e636
+		extern_bakefile_stage="out-$extern_bakefile_stage"
+		# extern_bakefile_stage=out-8ed1051e7e58e636
+		extern_bakefile="$target_path/$extern_bakefile.hcl"
+		# extern_bakefile=_target/debug/strsim-8ed1051e7e58e636.hcl
+		# cat "$extern_bakefile"
+		# echo mount from:"$extern_bakefile_stage" source:"/$extern" target:"$target_path/deps/$extern"
+		bakefiles+=("$extern_bakefile")
 		cat <<EOF >>"$dockerfile"
-  --mount=type=bind,from=tmpdeps,source=/$extern,target=$target_path/deps/$extern $backslash
+  --mount=type=bind,from=$extern_bakefile_stage,source=/$extern,target=$target_path/deps/$extern $backslash
 EOF
 	done
 
@@ -450,10 +457,53 @@ EOF
 	if [[ "$crate_out" != '' ]]; then
 		contexts['crate-out']=$crate_out
 	fi
-	if [[ ${#all_externs[@]} -ne 0 ]]; then
-		contexts['tmpdeps']=$tmp_deps_path
-	fi
 	contexts['rust']=$RUSTCBUILDX_DOCKER_IMAGE
+
+
+	# TODO: ask upstream `docker buildx bake` for a "dockerfiles" []string bake setting (that concatanates) or some way to inherit multiple dockerfiles (don't forget inlined ones)
+	# TODO: ask upstream `docker buildx` for orderless stages (so we can concat Dockerfiles any which way, and save another DAG)
+
+	declare -A extern_dockerfiles
+	printf '# syntax=%s\n' "$RUSTCBUILDX_DOCKER_SYNTAX" >"$dockerfile"~
+	for extern_bakefile in "${bakefiles[@]}"; do
+		local mounts=0
+		while read -r mount_name target; do
+			((mounts++)) || true
+			mount_name=$(cut -d'"' -f2 <<<"$mount_name")
+			target=$(cut -d'"' -f2 <<<"$target")
+			contexts["$mount_name"]="$target"
+		done < <(grep -E '"input_' "$extern_bakefile")
+
+		local extern_dockerfile=$extern_bakefile
+		extern_dockerfile=${extern_dockerfile##*/}
+	# extern_dockerfile=_target/debug/strsim-8ed1051e7e58e636.hcl
+		extern_dockerfile=${extern_dockerfile##*/}
+	# extern_dockerfile=strsim-8ed1051e7e58e636.hcl
+		extern_dockerfile=${extern_dockerfile#*-}
+	# extern_dockerfile=8ed1051e7e58e636.hcl
+		extern_dockerfile=${extern_dockerfile%*.hcl}
+	# extern_dockerfile=8ed1051e7e58e636
+		extern_dockerfile=$target_path/$extern_dockerfile.Dockerfile
+	# extern_dockerfile=_target/debug/strsim-8ed1051e7e58e636.Dockerfile
+		extern_dockerfiles["$extern_dockerfile"]=$mounts
+	done
+	# TODO: concat dockerfiles from topological sort of the DAG (stages must be defined first, then used)
+	for (( i_mounts=0; i_mounts<999999; i_mounts++ )); do
+		set +u
+		local left=${#extern_dockerfiles[@]}
+		set -u
+		if [[ "$left" = 0 ]]; then
+			break
+		fi
+		for extern_dockerfile in "${!extern_dockerfiles[@]}"; do
+			if [[ "$i_mounts" = "${extern_dockerfiles["$extern_dockerfile"]}" ]]; then
+				sed 's%^# syntax=.*$%%g' "$extern_dockerfile" >>"$dockerfile"~
+				unset 'extern_dockerfiles[$extern_dockerfile]'
+			fi
+		done
+	done
+	sed 's%^# syntax=.*$%%g' "$dockerfile" >>"$dockerfile"~
+
 
 	local bakefile=$target_path/$crate_name$extra_filename.hcl
 	local platform=local
@@ -467,7 +517,7 @@ $(for name in "${!contexts[@]}"; do # TODO: sort keys
 done)
 	}
 	dockerfile-inline = <<DOCKERFILE
-$(cat "$dockerfile")
+$(cat "$dockerfile"~)
 DOCKERFILE
 	network = "none"
 	output = ["$out_dir"] # https://github.com/moby/buildkit/issues/1224
@@ -480,7 +530,7 @@ target "$stdio_stage" {
 	target = "$stdio_stage"
 }
 EOF
-	rm "$dockerfile"
+	rm "$dockerfile"~; unset dockerfile
 
 	local stages=("$out_stage" "$stdio_stage")
 	if [[ "$incremental" != '' ]]; then
@@ -494,14 +544,14 @@ target "$incremental_stage" {
 EOF
 	fi
 
+
 	err=0
 	set +e
-	# https://docs.docker.com/engine/reference/commandline/buildx_bake/#file
 	if [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
 		cat "$bakefile" >&2
-		docker --debug buildx bake --file=- "${stages[@]}" <"$bakefile" >&2
+		docker --debug buildx bake --file="$bakefile" "${stages[@]}" >&2
 	else
-		docker         buildx bake --file=- "${stages[@]}" <"$bakefile" >/dev/null 2>&1
+		docker         buildx bake --file="$bakefile" "${stages[@]}" >/dev/null 2>&1
 	fi
 	err=$?
 	set -e
@@ -510,11 +560,6 @@ EOF
 		cat "$stdio/stdout"
 	fi
 	if ! [[ "${RUSTCBUILDX_DEBUG:-}" == '1' ]]; then
-		# rm "$bakefile"
-		for extern in "${all_externs[@]}"; do
-			rm "$tmp_deps_path/$extern"
-		done
-		rmdir "$tmp_deps_path"
 		rm "$stdio/stderr" >/dev/null 2>&1 || true
 		rm "$stdio/stdout" >/dev/null 2>&1 || true
 		rmdir "$stdio" >/dev/null 2>&1 || true
