@@ -22,9 +22,13 @@ jobs:
 
     - uses: actions/checkout@v3
 
-    - uses: actions-rs/cargo@v1
-      with:
-        command: fetch
+    # - uses: actions-rs/cargo@v1
+    #   with:
+    #     command: fetch
+    - run: |
+      mkdir -p $HOME/.cargo/registry/src/github.com-1ecc6299db9ec823/
+      curl -#fsSLo "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/v1.0.3.zip https://github.com/sunfishcode/io-lifetimes/archive/refs/tags/v1.0.3.zip
+      cd $HOME/.cargo/registry/src/github.com-1ecc6299db9ec823/io-lifetimes-1.0.3/ && unzip v1.0.3.zip && cd -
 
     - uses: docker/setup-buildx-action@v2
 
@@ -47,6 +51,10 @@ jobs:
 
     - uses: docker/setup-buildx-action@v2
 
+    - run: |
+      ls -lha /home/runner/.cargo/registry/src/github.com-1ecc6299db9ec823/io-lifetimes-1.0.3 || true
+      ls -lha /home/runner/.cargo/registry/src/*/io-lifetimes-1.0.3 || true
+      ls -lha /home/runner/.cargo/registry/src/*/io-lifetimes-* || true
     - run: if RUSTCBUILDX_DEBUG=1 CARGO_TARGET_DIR=$PWD/_target ./tryin.sh; then echo YAY; else echo FAILED && tree _target && exit 1; fi
 
 

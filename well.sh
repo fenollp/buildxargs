@@ -1,5 +1,5 @@
 #!/bin/bash -eu
-# trash _targetWell >/dev/null 2>&1; shellcheck ./well.sh && RUSTCBUILDX_DEBUG=1 ./well.sh
+# trash _targetWell /tmp/global.lock >/dev/null 2>&1; shellcheck ./well.sh && RUSTCBUILDX_DEBUG=1 ./well.sh
 
 PROFILE=${PROFILE:-debug}
 CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}
