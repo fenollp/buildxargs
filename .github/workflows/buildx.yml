@@ -26,9 +26,11 @@ jobs:
     #   with:
     #     command: fetch
     - run: |
+        tmp=$(mktemp -d)
+        curl -#fsSLo "$tmp"/v1.0.3.zip https://github.com/sunfishcode/io-lifetimes/archive/refs/tags/v1.0.3.zip
+        cd "$tmp" && unzip v1.0.3.zip && cd -
         mkdir -p $HOME/.cargo/registry/src/github.com-1ecc6299db9ec823/
-        curl -#fsSLo "$CARGO_HOME"/registry/src/github.com-1ecc6299db9ec823/v1.0.3.zip https://github.com/sunfishcode/io-lifetimes/archive/refs/tags/v1.0.3.zip
-        cd $HOME/.cargo/registry/src/github.com-1ecc6299db9ec823/io-lifetimes-1.0.3/ && unzip v1.0.3.zip && cd -
+        mv "$tmp"/io-lifetimes-1.0.3 $HOME/.cargo/registry/src/github.com-1ecc6299db9ec823/
 
     - uses: docker/setup-buildx-action@v2
 
