@@ -1,6 +1,7 @@
-use std::collections::hash_map::Entry::Vacant;
-use std::collections::HashMap;
-use std::fmt::Display;
+use std::{
+    collections::{hash_map::Entry::Vacant, HashMap},
+    fmt::Display,
+};
 
 // try_quick executes f on values slice and subslices when an error is returned
 // until maxdepth amounts of slicing happened.
@@ -68,13 +69,8 @@ fn test_bad_job_zero() {
 
     let err = format!("{}", "NaN".parse::<u32>().unwrap_err());
 
-    let ixs_failed = try_quick(&xs, 0, |subxs| {
-        if !subxs.contains(&0) {
-            Ok(())
-        } else {
-            Err(err.clone())
-        }
-    });
+    let ixs_failed =
+        try_quick(&xs, 0, |subxs| if !subxs.contains(&0) { Ok(()) } else { Err(err.clone()) });
     assert_eq!(ixs_failed, Err(err.clone()));
 
     use std::ops::RangeInclusive as RI;
@@ -91,13 +87,8 @@ fn test_bad_job_zero() {
         (8, errors(0..=0)),
         (9, errors(0..=0)),
     ] {
-        let ixs_failed = try_quick(&xs, d, |subxs| {
-            if !subxs.contains(&0) {
-                Ok(())
-            } else {
-                Err(err.clone())
-            }
-        });
+        let ixs_failed =
+            try_quick(&xs, d, |subxs| if !subxs.contains(&0) { Ok(()) } else { Err(err.clone()) });
         assert_eq!((d, ixs_failed), (d, Ok(errors)));
     }
 }

@@ -69,7 +69,7 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: stable
+        toolchain: nightly
     - run: rustup component add rustfmt
     - uses: actions/checkout@v3
     - uses: actions-rs/cargo@v1

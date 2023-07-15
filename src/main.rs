@@ -1,8 +1,11 @@
+use std::{
+    fs::File,
+    io::{stderr, stdin, BufRead, BufReader, Write},
+    process::{Command, ExitStatus},
+};
+
 use buildxargs::try_quick;
 use clap::Parser;
-use std::fs::File;
-use std::io::{stderr, stdin, BufRead, BufReader, Write};
-use std::process::{Command, ExitStatus};
 use tempfile::NamedTempFile;
 
 type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
@@ -45,19 +48,10 @@ fn main() -> Res<()> {
 
     let blanks = |line: &String| !line.trim().is_empty();
     let cmds: Vec<String> = if args.file == "-" {
-        stdin()
-            .lock()
-            .lines()
-            .map_while(Result::ok)
-            .filter(blanks)
-            .collect()
+        stdin().lock().lines().map_while(Result::ok).filter(blanks).collect()
     } else {
         let file = File::open(&args.file)?;
-        BufReader::new(file)
-            .lines()
-            .map_while(Result::ok)
-            .filter(blanks)
-            .collect()
+        BufReader::new(file).lines().map_while(Result::ok).filter(blanks).collect()
     };
     if cmds.is_empty() {
         return Err("no commands given".into());
@@ -71,19 +65,15 @@ fn main() -> Res<()> {
         write_as_buildx_bake(&mut stderr, &targets)?;
     }
 
-    let ixs_failed = try_quick(
-        &targets,
-        args.retry,
-        |targets: &[DockerBuildArgs]| -> Res<()> {
-            let prefix = "command `docker buildx bake`";
-            let status = run_bake(&args, targets)?;
-            match status.code() {
-                None => Err(format!("{prefix} terminated by signal").into()),
-                Some(0) => Ok(()),
-                Some(code) => Err(format!("{prefix} failed with {code}").into()),
-            }
-        },
-    )?;
+    let ixs_failed = try_quick(&targets, args.retry, |targets: &[DockerBuildArgs]| -> Res<()> {
+        let prefix = "command `docker buildx bake`";
+        let status = run_bake(&args, targets)?;
+        match status.code() {
+            None => Err(format!("{prefix} terminated by signal").into()),
+            Some(0) => Ok(()),
+            Some(code) => Err(format!("{prefix} failed with {code}").into()),
+        }
+    })?;
 
     if !ixs_failed.is_empty() {
         let mut printed = false;
