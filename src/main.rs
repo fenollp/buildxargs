@@ -68,7 +68,7 @@ fn main() -> Res<()> {
 
     if args.debug {
         let mut stderr = stderr().lock();
-        write_as_bake(&mut stderr, &targets)?;
+        write_as_buildx_bake(&mut stderr, &targets)?;
     }
 
     let ixs_failed = try_quick(
@@ -132,7 +132,7 @@ fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Res<ExitStatus> {
     }
 
     let mut f = NamedTempFile::new()?;
-    write_as_bake(&mut f, targets)?;
+    write_as_buildx_bake(&mut f, targets)?;
     f.flush()?;
     // TODO: pass data through BufWriter to STDIN with `-f-`
     command.arg("-f");
