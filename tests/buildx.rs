@@ -6,12 +6,33 @@ use predicates::{str::diff, Predicate};
 fn cli_installed_docker_usage() {
     let cmd = Command::new("docker").arg("buildx").arg("version").output().unwrap();
     assert_eq!(cmd.status.code(), Some(0));
-    assert_eq!(&String::from_utf8_lossy(&cmd.stdout), "github.com/docker/buildx v0.11.1 b4df085\n");
+    let buildx_version = String::from_utf8_lossy(&cmd.stdout).into_owned();
 
     let cmd = Command::new("docker").arg("buildx").arg("bake").arg("--help").output().unwrap();
     assert_eq!(cmd.status.code(), Some(0));
-    let matcher = diff(
-        r#"
+    let matcher = diff(usages(&buildx_version).0);
+    let blank = "\n                               ";
+    assert!(matcher
+        .find_case(false, &String::from_utf8_lossy(&cmd.stdout).replace(blank, " "))
+        .map(|dif| eprintln!("{dif:?}"))
+        .is_none());
+
+    let cmd = Command::new("docker").arg("buildx").arg("build").arg("--help").output().unwrap();
+    assert_eq!(cmd.status.code(), Some(0));
+    let matcher = diff(usages(&buildx_version).1);
+    let blank = "\n                                      ";
+    assert!(matcher
+        .find_case(false, &String::from_utf8_lossy(&cmd.stdout).replace(blank, " "))
+        .map(|dif| eprintln!("{dif:?}"))
+        .is_none());
+}
+
+#[inline]
+fn usages(version: &str) -> (&'static str, &'static str) {
+    let version: String = version.replace('+', " ").split_ascii_whitespace().take(2).collect();
+    match version.as_str() {
+        "github.com/docker/buildxv0.11.1" => (
+            r#"
 Usage:  docker buildx bake [OPTIONS] [TARGET...]
 
 Build from a file
@@ -33,17 +54,7 @@ Options:
       --sbom string            Shorthand for "--set=*.attest=type=sbom"
       --set stringArray        Override target value (e.g., "targetpattern.key=value")
 "#,
-    );
-    let blank = "\n                               ";
-    assert!(matcher
-        .find_case(false, &String::from_utf8_lossy(&cmd.stdout).replace(blank, " "))
-        .map(|dif| eprintln!("{dif:?}"))
-        .is_none());
-
-    let cmd = Command::new("docker").arg("buildx").arg("build").arg("--help").output().unwrap();
-    assert_eq!(cmd.status.code(), Some(0));
-    let matcher = diff(
-        r#"
+            r#"
 Usage:  docker buildx build [OPTIONS] PATH | URL | -
 
 Start a build
@@ -84,10 +95,8 @@ Options:
       --target string                 Set the target build stage to build
       --ulimit ulimit                 Ulimit options (default [])
 "#,
-    );
-    let blank = "\n                                      ";
-    assert!(matcher
-        .find_case(false, &String::from_utf8_lossy(&cmd.stdout).replace(blank, " "))
-        .map(|dif| eprintln!("{dif:?}"))
-        .is_none());
+        ),
+
+        _ => ("UNHANDLED", "UNHANDLED"),
+    }
 }
