@@ -50,7 +50,12 @@ fn main() -> Res<()> {
     let cmds: Vec<String> = if args.file == "-" {
         stdin().lock().lines().map_while(Result::ok).filter(blanks).collect()
     } else {
-        let file = File::open(&args.file)?;
+        let file = File::open(&args.file).map_err(|e| match e {
+            std::io::Error { .. } if e.kind() == std::io::ErrorKind::NotFound => {
+                format!("not found: {}", &args.file)
+            }
+            _ => e.to_string(),
+        })?;
         BufReader::new(file).lines().map_while(Result::ok).filter(blanks).collect()
     };
     if cmds.is_empty() {
