@@ -1,11 +1,17 @@
-#[test]
-fn installed_docker_buildx_version() {
-    // docker buildx version
-    assert_eq!("", "github.com/docker/buildx v0.10.4 c513d34");
-}
+use std::{assert_eq, process::Command};
 
-// docker buildx bake --help
-r#"
+use predicates::{str::diff, Predicate};
+
+#[test]
+fn cli_installed_docker_usage() {
+    let cmd = Command::new("docker").arg("buildx").arg("version").output().unwrap();
+    assert_eq!(cmd.status.code(), Some(0));
+    assert_eq!(&String::from_utf8_lossy(&cmd.stdout), "github.com/docker/buildx v0.11.1 b4df085\n");
+
+    let cmd = Command::new("docker").arg("buildx").arg("bake").arg("--help").output().unwrap();
+    assert_eq!(cmd.status.code(), Some(0));
+    let matcher = diff(
+        r#"
 Usage:  docker buildx bake [OPTIONS] [TARGET...]
 
 Build from a file
@@ -26,10 +32,18 @@ Options:
       --push                   Shorthand for "--set=*.output=type=registry"
       --sbom string            Shorthand for "--set=*.attest=type=sbom"
       --set stringArray        Override target value (e.g., "targetpattern.key=value")
-"#
+"#,
+    );
+    let blank = "\n                               ";
+    assert!(matcher
+        .find_case(false, &String::from_utf8_lossy(&cmd.stdout).replace(blank, " "))
+        .map(|dif| eprintln!("{dif:?}"))
+        .is_none());
 
-// docker buildx build --help
-r#"
+    let cmd = Command::new("docker").arg("buildx").arg("build").arg("--help").output().unwrap();
+    assert_eq!(cmd.status.code(), Some(0));
+    let matcher = diff(
+        r#"
 Usage:  docker buildx build [OPTIONS] PATH | URL | -
 
 Start a build
@@ -58,7 +72,7 @@ Options:
   -o, --output stringArray            Output destination (format: "type=local,dest=path")
       --platform stringArray          Set target platform for build
       --progress string               Set type of progress output ("auto", "plain", "tty"). Use plain to show container output (default "auto")
-      --provenance string             Shortand for "--attest=type=provenance"
+      --provenance string             Shorthand for "--attest=type=provenance"
       --pull                          Always attempt to pull all referenced images
       --push                          Shorthand for "--output=type=registry"
   -q, --quiet                         Suppress the build output and print image ID on success
@@ -69,6 +83,11 @@ Options:
   -t, --tag stringArray               Name and optionally a tag (format: "name:tag")
       --target string                 Set the target build stage to build
       --ulimit ulimit                 Ulimit options (default [])
-"#
-
-// Could not parse docker build --platform=local --network none --build-context deps=/home/pete/wefwefwef/buildxargs.git/_target/debug/deps --build-context rust=docker-image://docker.io/library/rust:1.68.2-slim@sha256:df4d8577fab8b65fabe9e7f792d6f4c57b637dd1c595f3f0a9398a9854e17094 --file /tmp/tmp.gFbGCMbnpZ --output /home/pete/wefwefwef/buildxargs.git/_target/debug/deps     --target out         /home/pete/wefwefwef/buildxargs.git
+"#,
+    );
+    let blank = "\n                                      ";
+    assert!(matcher
+        .find_case(false, &String::from_utf8_lossy(&cmd.stdout).replace(blank, " "))
+        .map(|dif| eprintln!("{dif:?}"))
+        .is_none());
+}

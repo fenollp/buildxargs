@@ -1,8 +1,8 @@
-use assert_cmd::{crate_name, Command};
+use assert_cmd::Command;
 
 #[test]
 fn cli_main_usage() {
-    let mut cmd = Command::cargo_bin(crate_name!()).unwrap();
+    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
     cmd.arg("--help").assert().success().code(0).stdout(
         r#"xargs for BuildKit with docker buildx bake
 
