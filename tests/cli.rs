@@ -96,8 +96,14 @@ fn cli_exec_file() {
     let tmp_file = tmp_dir.child("commands.txt");
     tmp_file.write_str(&COMMANDS.replace("$TMP", &tmp_dir.path().to_string_lossy())).unwrap();
 
-    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
-    cmd.arg("-f").arg(tmp_file.path()).assert().success().code(0).stdout("");
+    for no_cache in [true, false] {
+        let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
+        cmd.arg("-f").arg(tmp_file.path());
+        if no_cache {
+            cmd.arg("--no-cache");
+        }
+        cmd.assert().success().code(0).stdout("");
+    }
 }
 
 #[test]
@@ -117,9 +123,13 @@ COPY --from=tryin /girouette /
     let girouette_dockerfile = girouette_dockerfile.path().display();
     let tmp_dir = tmp_dir.path().display();
 
-    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
-    cmd.arg("--debug")
-        .write_stdin(format!(
+    for no_cache in [true, false] {
+        let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
+        cmd.arg("--debug");
+        if no_cache {
+            cmd.arg("--no-cache");
+        }
+        cmd.write_stdin(format!(
             r#"
 docker build -o={tmp_dir} --build-arg FAIL=1 -f {girouette_dockerfile} .
 docker build -o={tmp_dir}                    -f {girouette_dockerfile} .
@@ -144,4 +154,5 @@ Failed:
                     .or(contains(r#""2 jobs failed after 3 retries""#)),
             ),
         );
+    }
 }
