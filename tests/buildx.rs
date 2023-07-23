@@ -309,8 +309,7 @@ Options:
       --pull                   Always attempt to pull all referenced images
       --push                   Shorthand for "--set=*.output=type=registry"
       --sbom string            Shorthand for "--set=*.attest=type=sbom"
-      --set stringArray        Override target value (e.g.,
-                               "targetpattern.key=value")
+      --set stringArray        Override target value (e.g., "targetpattern.key=value")
 "#,
             r#"
 Usage:  docker buildx build [OPTIONS] PATH | URL | -
