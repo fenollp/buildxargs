@@ -17,28 +17,37 @@ fn cli_installed_docker_usage() {
     };
     let matcher = diff(usages(&buildx_version).0);
     let blank = "\n                           ";
-    assert!(matcher
-        .find_case(false, &re_home(String::from_utf8_lossy(&cmd.stdout).replace(blank, " ")))
-        .map(|dif| eprintln!("{dif:?}"))
-        .is_none());
+    assert!(
+        matcher
+            .find_case(false, &re_home(String::from_utf8_lossy(&cmd.stdout).replace(blank, " ")))
+            .map(|dif| eprintln!("{dif:?}"))
+            .is_none(),
+        "for: {buildx_version}"
+    );
 
     let cmd = Command::new("docker").arg("buildx").arg("bake").arg("--help").output().unwrap();
     assert_eq!(cmd.status.code(), Some(0));
     let matcher = diff(usages(&buildx_version).1);
     let blank = "\n                               ";
-    assert!(matcher
-        .find_case(false, &String::from_utf8_lossy(&cmd.stdout).replace(blank, " "))
-        .map(|dif| eprintln!("{dif:?}"))
-        .is_none());
+    assert!(
+        matcher
+            .find_case(false, &String::from_utf8_lossy(&cmd.stdout).replace(blank, " "))
+            .map(|dif| eprintln!("{dif:?}"))
+            .is_none(),
+        "for: {buildx_version}"
+    );
 
     let cmd = Command::new("docker").arg("buildx").arg("build").arg("--help").output().unwrap();
     assert_eq!(cmd.status.code(), Some(0));
     let matcher = diff(usages(&buildx_version).2);
     let blank = "\n                                      ";
-    assert!(matcher
-        .find_case(false, &String::from_utf8_lossy(&cmd.stdout).replace(blank, " "))
-        .map(|dif| eprintln!("{dif:?}"))
-        .is_none());
+    assert!(
+        matcher
+            .find_case(false, &String::from_utf8_lossy(&cmd.stdout).replace(blank, " "))
+            .map(|dif| eprintln!("{dif:?}"))
+            .is_none(),
+        "for: {buildx_version}"
+    );
 }
 
 #[inline]
@@ -196,9 +205,6 @@ Options:
 "#,
         ),
 
-        _ => {
-            eprintln!("Unhandled version: {version:?}");
-            ("UNHANDLED", "UNHANDLED", "UNHANDLED")
-        }
+        _ => ("UNHANDLED", "UNHANDLED", "UNHANDLED"),
     }
 }
