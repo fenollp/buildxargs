@@ -142,13 +142,18 @@ fn parse_shell_commands(cmds: &[String]) -> Res<Vec<DockerBuildArgs>> {
         match shlex::split(cmd) {
             None => return Err(format!("Typo in {cmd}").into()),
             Some(words) => {
-                let parsed = DockerBuildArgs::try_parse_from(words).map_err(|e| {
-                    eprintln!("Could not parse {cmd}"); //fixme:drop exit and use ?
-                    e.exit() // NOTE: fn exit() -> !
-                });
-                if let Ok(build_args) = parsed {
-                    targets.push(build_args);
+                let build_args = DockerBuildArgs::try_parse_from(words).map_err(|e| {
+                    eprintln!("Could not parse {cmd}");
+                    e.print().expect("Error printing error");
+                    e
+                })?;
+
+                // TODO: decide how to use these instead of failing
+                if build_args.debug {
+                    return Err("Unsupported `docker --debug`".into());
                 }
+
+                targets.push(build_args);
             }
         }
     }
@@ -250,6 +255,20 @@ fn write_as_buildx_bake(f: &mut impl Write, targets: &[DockerBuildArgs]) -> Res<
 struct DockerBuildArgs {
     #[clap(subcommand)]
     build: DockerBuild,
+
+    /// Enable debug mode
+    #[arg(long, short = 'D')]
+    debug: bool,
+    // TODO: pass these down to `bake` where possible
+    //       --config string      Location of client config files (default "/home/pete/.docker")
+    //   -c, --context string     Name of the context to use to connect to the daemon (overrides DOCKER_HOST env var and default context set with "docker context use")
+    //   -H, --host list          Daemon socket to connect to
+    //   -l, --log-level string   Set the logging level ("debug", "info", "warn", "error", "fatal") (default "info")
+    //       --tls                Use TLS; implied by --tlsverify
+    //       --tlscacert string   Trust certs signed only by this CA (default "/home/pete/.docker/ca.pem")
+    //       --tlscert string     Path to TLS certificate file (default "/home/pete/.docker/cert.pem")
+    //       --tlskey string      Path to TLS key file (default "/home/pete/.docker/key.pem")
+    //       --tlsverify          Use TLS and verify the remote
 }
 
 #[derive(clap::Subcommand, Debug, Clone)]

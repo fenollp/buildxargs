@@ -3,9 +3,9 @@ use assert_fs::prelude::{FileWriteStr, PathChild};
 use predicates::{prelude::PredicateBooleanExt, str::contains};
 
 const COMMANDS: &str = r#"
-docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc' --output=$TMP https://github.com/fenollp/dockerhost-tools--yt-dlp.git
+docker build                          --build-arg DO_NOT_REENCODE=1 --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc' --output=$TMP https://github.com/fenollp/dockerhost-tools--yt-dlp.git
 docker build -o=$TMP --platform=local --build-arg PREBUILT=1 https://github.com/FuzzyMonkeyCo/monkey.git
-docker build --platform=local -o $TMP https://github.com/docker/buildx.git
+docker build         --platform=local -o $TMP                https://github.com/docker/buildx.git
 "#;
 
 const PRINTED: &str = r#"{
@@ -23,7 +23,8 @@ const PRINTED: &str = r#"{
       "context": "https://github.com/fenollp/dockerhost-tools--yt-dlp.git",
       "dockerfile": "Dockerfile",
       "args": {
-        "ARGs": "--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc"
+        "ARGs": "--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc",
+        "DO_NOT_REENCODE": "1"
       },
       "output": [
         "$TMP"
@@ -75,6 +76,19 @@ fn cli_print_file() {
 
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
     cmd.arg("-f").arg(tmp_file.path()).arg("--print").assert().success().code(0).stdout(PRINTED);
+}
+
+#[test]
+fn cli_docker_uses_debug() {
+    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
+    cmd.write_stdin(
+        "docker --debug build --platform=local -o $TMP https://github.com/docker/buildx.git",
+    )
+    .assert()
+    .failure()
+    .code(1)
+    .stdout("")
+    .stderr(contains(r#"Error: "Unsupported `docker --debug`""#));
 }
 
 #[test]

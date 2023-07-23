@@ -48,7 +48,7 @@ OPTIONS:
 ## Installing
 
 ```shell
-cargo install --git https://github.com/fenollp/buildxargs
+cargo install --locked --git https://github.com/fenollp/buildxargs
 # also: install Docker ≥ 18.09
 ```
 
