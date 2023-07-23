@@ -43,9 +43,10 @@ fn cli_installed_docker_usage() {
 
 #[inline]
 fn usages(version: &str) -> (&'static str, &'static str, &'static str) {
-    let short: String = version.replace('+', " ").split_ascii_whitespace().take(2).collect();
+    let short: String =
+        version.replace(" v", " ").replace('+', " ").split_ascii_whitespace().take(2).collect();
     match short.as_str() {
-        "github.com/docker/buildxv0.11.1" => (
+        "github.com/docker/buildx0.11.1" => (
             r#"
 Usage:  docker [OPTIONS] COMMAND
 

@@ -276,7 +276,7 @@ enum DockerBuild {
     Build(BuildArgs),
 }
 
-// https://github.com/docker/docs/blob/main/build/bake/file-definition.md
+// https://github.com/docker/buildx/blob/master/docs/bake-reference.md#target
 // Complete list of valid target fields from https://docs.docker.com/engine/reference/commandline/buildx_bake
 // args
 // cache-from
