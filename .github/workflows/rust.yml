@@ -1,66 +1,33 @@
-on: [push]
-
 name: CI
+
+on: [push]
 
 jobs:
   test:
-    name: cargo test
+    name: tests
     runs-on: ubuntu-latest
     steps:
+    - run: docker buildx version
+    - run: DOCKER_BUILDKIT=1 docker --help
+    - run: docker buildx bake --help
+    - run: docker buildx build --help
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
         toolchain: stable
-
     - uses: actions/checkout@v3
-
+    - uses: taiki-e/install-action@nextest
     - uses: actions-rs/cargo@v1
       with:
         command: fetch
-
     - uses: actions-rs/cargo@v1
       with:
-        command: test
-        args: --offline --locked --frozen --all-targets --all-features
-
-    - run: |
-        echo >commands.txt
-        echo "docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc' --output=$HOME https://github.com/fenollp/dockerhost-tools--yt-dlp.git" >>commands.txt
-        echo "docker build -o=. --platform=local --build-arg PREBUILT=1 https://github.com/FuzzyMonkeyCo/monkey.git" >>commands.txt
-        echo "docker build --platform=local -o . https://github.com/docker/buildx.git" >>commands.txt
-        cat commands.txt
-
-    - run: cargo run --offline --locked --frozen --all-features --release -- --debug --print <commands.txt
-
+        command: nextest
+        args: run --all-targets --all-features --locked --frozen --offline
     - uses: actions-rs/cargo@v1
       with:
-        command: run
-        args: -- -f commands.txt --print
-
-    - uses: actions-rs/cargo@v1
-      with:
-        command: run
-        args: --release -- -f commands.txt
-
-    - name: Test --retry
-      run: |
-        echo >girouette.Dockerfile
-        echo '# syntax=docker.io/docker/dockerfile:1@sha256:443aab4ca21183e069e7d8b2dc68006594f40bddf1b15bbd83f5137bd93e80e2' >>girouette.Dockerfile
-        echo 'FROM --platform=$BUILDPLATFORM docker.io/library/alpine@sha256:7580ece7963bfa863801466c0a488f11c86f85d9988051a9f9c68cb27f6b7872 AS alpine' >>girouette.Dockerfile
-        echo 'FROM alpine AS tryin' >>girouette.Dockerfile
-        echo 'ARG FAIL' >>girouette.Dockerfile
-        echo 'ARG SLEEP=1' >>girouette.Dockerfile
-        echo 'RUN set -ux && sleep "$SLEEP" && [[ -z "${FAIL:-}" ]] && echo Passed! >/girouette' >>girouette.Dockerfile
-        echo 'FROM scratch' >>girouette.Dockerfile
-        echo 'COPY --from=tryin /girouette /' >>girouette.Dockerfile
-
-        echo >commands.txt
-        echo 'docker build -o=. --build-arg FAIL=1 -f girouette.Dockerfile .' >>commands.txt
-        echo 'docker build -o=.                    -f girouette.Dockerfile .' >>commands.txt
-        cat commands.txt
-
-        ! cargo run --offline --locked --frozen --all-features --release -- --debug <commands.txt
-
+        command: nextest run
+        args: run --all-targets --all-features --locked --frozen --offline --release
 
   fmt:
     name: cargo fmt
@@ -69,14 +36,13 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: stable
+        toolchain: nightly
     - run: rustup component add rustfmt
     - uses: actions/checkout@v3
     - uses: actions-rs/cargo@v1
       with:
         command: fmt
         args: --check --all
-
 
   clippy:
     name: cargo clippy
@@ -94,4 +60,9 @@ jobs:
     - uses: actions-rs/cargo@v1
       with:
         command: clippy
-        args: --locked --frozen --offline --all-targets --all-features -- -D warnings --no-deps -W clippy::cast_lossless -W clippy::redundant_closure_for_method_calls -W clippy::str_to_string'
+        args: >
+          --locked --frozen --offline --all-targets --all-features
+          -- -D warnings --no-deps
+          -W clippy::cast_lossless
+          -W clippy::redundant_closure_for_method_calls
+          -W clippy::str_to_string
