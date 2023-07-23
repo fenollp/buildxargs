@@ -52,10 +52,9 @@ fn cli_installed_docker_usage() {
 
 #[inline]
 fn usages(version: &str) -> (&'static str, &'static str, &'static str) {
-    let short: String =
-        version.replace(" v", " ").replace('+', " ").split_ascii_whitespace().take(2).collect();
+    let short: String = version.replace('+', " ").split_ascii_whitespace().take(2).collect();
     match short.as_str() {
-        "github.com/docker/buildx0.11.1" => (
+        "github.com/docker/buildxv0.11.1" => (
             r#"
 Usage:  docker [OPTIONS] COMMAND
 
@@ -200,6 +199,190 @@ Options:
       --shm-size bytes                Size of "/dev/shm"
       --ssh stringArray               SSH agent socket or keys to expose to the build (format: "default|<id>[=<socket>|<key>[,<key>]]")
   -t, --tag stringArray               Name and optionally a tag (format: "name:tag")
+      --target string                 Set the target build stage to build
+      --ulimit ulimit                 Ulimit options (default [])
+"#,
+        ),
+
+        "github.com/docker/buildx0.11.1" => (
+            r#"
+Usage:  docker [OPTIONS] COMMAND
+
+A self-sufficient runtime for containers
+
+Options:
+      --config string      Location of client config files (default
+                           "/home/runner/.docker")
+  -c, --context string     Name of the context to use to connect to the
+                           daemon (overrides DOCKER_HOST env var and
+                           default context set with "docker context use")
+  -D, --debug              Enable debug mode
+  -H, --host list          Daemon socket(s) to connect to
+  -l, --log-level string   Set the logging level
+                           ("debug"|"info"|"warn"|"error"|"fatal")
+                           (default "info")
+      --tls                Use TLS; implied by --tlsverify
+      --tlscacert string   Trust certs signed only by this CA (default
+                           "/home/runner/.docker/ca.pem")
+      --tlscert string     Path to TLS certificate file (default
+                           "/home/runner/.docker/cert.pem")
+      --tlskey string      Path to TLS key file (default
+                           "/home/runner/.docker/key.pem")
+      --tlsverify          Use TLS and verify the remote
+  -v, --version            Print version information and quit
+
+Management Commands:
+  builder     Manage builds
+  buildx*     Docker Buildx (Docker Inc., 0.11.1+azure-1)
+  compose*    Docker Compose (Docker Inc., 2.20.0+azure-1)
+  config      Manage Docker configs
+  container   Manage containers
+  context     Manage contexts
+  image       Manage images
+  manifest    Manage Docker image manifests and manifest lists
+  network     Manage networks
+  node        Manage Swarm nodes
+  plugin      Manage plugins
+  secret      Manage Docker secrets
+  service     Manage services
+  stack       Manage Docker stacks
+  swarm       Manage Swarm
+  system      Manage Docker
+  trust       Manage trust on Docker images
+  volume      Manage volumes
+
+Commands:
+  attach      Attach local standard input, output, and error streams to a running container
+  build       Build an image from a Dockerfile
+  commit      Create a new image from a container's changes
+  cp          Copy files/folders between a container and the local filesystem
+  create      Create a new container
+  diff        Inspect changes to files or directories on a container's filesystem
+  events      Get real time events from the server
+  exec        Run a command in a running container
+  export      Export a container's filesystem as a tar archive
+  history     Show the history of an image
+  images      List images
+  import      Import the contents from a tarball to create a filesystem image
+  info        Display system-wide information
+  inspect     Return low-level information on Docker objects
+  kill        Kill one or more running containers
+  load        Load an image from a tar archive or STDIN
+  login       Log in to a Docker registry
+  logout      Log out from a Docker registry
+  logs        Fetch the logs of a container
+  pause       Pause all processes within one or more containers
+  port        List port mappings or a specific mapping for the container
+  ps          List containers
+  pull        Pull an image or a repository from a registry
+  push        Push an image or a repository to a registry
+  rename      Rename a container
+  restart     Restart one or more containers
+  rm          Remove one or more containers
+  rmi         Remove one or more images
+  run         Run a command in a new container
+  save        Save one or more images to a tar archive (streamed to STDOUT by default)
+  search      Search the Docker Hub for images
+  start       Start one or more stopped containers
+  stats       Display a live stream of container(s) resource usage statistics
+  stop        Stop one or more running containers
+  tag         Create a tag TARGET_IMAGE that refers to SOURCE_IMAGE
+  top         Display the running processes of a container
+  unpause     Unpause all processes within one or more containers
+  update      Update configuration of one or more containers
+  version     Show the Docker version information
+  wait        Block until one or more containers stop, then print their exit codes
+
+Run 'docker COMMAND --help' for more information on a command.
+
+To get more help with docker, check out our guides at https://docs.docker.com/go/guides/
+"#,
+            r#"
+Usage:  docker buildx bake [OPTIONS] [TARGET...]
+
+Build from a file
+
+Aliases:
+  docker buildx bake, docker buildx f
+
+Options:
+      --builder string         Override the configured builder instance
+  -f, --file stringArray       Build definition file
+      --load                   Shorthand for "--set=*.output=type=docker"
+      --metadata-file string   Write build result metadata to the file
+      --no-cache               Do not use cache when building the image
+      --print                  Print the options without building
+      --progress string        Set type of progress output ("auto",
+                               "plain", "tty"). Use plain to show
+                               container output (default "auto")
+      --provenance string      Shorthand for "--set=*.attest=type=provenance"
+      --pull                   Always attempt to pull all referenced images
+      --push                   Shorthand for "--set=*.output=type=registry"
+      --sbom string            Shorthand for "--set=*.attest=type=sbom"
+      --set stringArray        Override target value (e.g.,
+                               "targetpattern.key=value")
+"#,
+            r#"
+Usage:  docker buildx build [OPTIONS] PATH | URL | -
+
+Start a build
+
+Aliases:
+  docker buildx build, docker buildx b
+
+Options:
+      --add-host strings              Add a custom host-to-IP mapping
+                                      (format: "host:ip")
+      --allow strings                 Allow extra privileged entitlement
+                                      (e.g., "network.host",
+                                      "security.insecure")
+      --attest stringArray            Attestation parameters (format:
+                                      "type=sbom,generator=image")
+      --build-arg stringArray         Set build-time variables
+      --build-context stringArray     Additional build contexts (e.g.,
+                                      name=path)
+      --builder string                Override the configured builder instance
+      --cache-from stringArray        External cache sources (e.g.,
+                                      "user/app:cache",
+                                      "type=local,src=path/to/dir")
+      --cache-to stringArray          Cache export destinations (e.g.,
+                                      "user/app:cache",
+                                      "type=local,dest=path/to/dir")
+      --cgroup-parent string          Optional parent cgroup for the container
+  -f, --file string                   Name of the Dockerfile (default:
+                                      "PATH/Dockerfile")
+      --iidfile string                Write the image ID to the file
+      --label stringArray             Set metadata for an image
+      --load                          Shorthand for "--output=type=docker"
+      --metadata-file string          Write build result metadata to the file
+      --network string                Set the networking mode for the
+                                      "RUN" instructions during build
+                                      (default "default")
+      --no-cache                      Do not use cache when building the image
+      --no-cache-filter stringArray   Do not cache specified stages
+  -o, --output stringArray            Output destination (format:
+                                      "type=local,dest=path")
+      --platform stringArray          Set target platform for build
+      --progress string               Set type of progress output
+                                      ("auto", "plain", "tty"). Use plain
+                                      to show container output (default
+                                      "auto")
+      --provenance string             Shorthand for "--attest=type=provenance"
+      --pull                          Always attempt to pull all
+                                      referenced images
+      --push                          Shorthand for "--output=type=registry"
+  -q, --quiet                         Suppress the build output and print
+                                      image ID on success
+      --sbom string                   Shorthand for "--attest=type=sbom"
+      --secret stringArray            Secret to expose to the build
+                                      (format:
+                                      "id=mysecret[,src=/local/secret]")
+      --shm-size bytes                Size of "/dev/shm"
+      --ssh stringArray               SSH agent socket or keys to expose
+                                      to the build (format:
+                                      "default|<id>[=<socket>|<key>[,<key>]]")
+  -t, --tag stringArray               Name and optionally a tag (format:
+                                      "name:tag")
       --target string                 Set the target build stage to build
       --ulimit ulimit                 Ulimit options (default [])
 "#,
