@@ -1,7 +1,4 @@
-use std::{
-    collections::{hash_map::Entry::Vacant, HashMap},
-    fmt::Display,
-};
+use std::collections::{hash_map::Entry::Vacant, HashMap};
 
 // try_quick executes f on values slice and subslices when an error is returned
 // until maxdepth amounts of slicing happened.
@@ -9,19 +6,16 @@ use std::{
 pub fn try_quick<T, E, F>(values: &[T], maxdepth: u8, mut f: F) -> Result<HashMap<usize, String>, E>
 where
     T: Clone + std::fmt::Debug,
-    E: Display,
+    E: std::fmt::Display,
     F: FnMut(&[T]) -> Result<(), E>,
 {
     assert!(!values.is_empty());
 
-    let initial_attempt = f(values);
-    if let Ok(()) = initial_attempt {
-        return Ok(HashMap::new());
-    }
-    if maxdepth == 0 {
-        initial_attempt?;
-        unreachable!();
-    }
+    match f(values) {
+        Ok(()) => return Ok([].into()),
+        Err(e) if maxdepth == 0 => return Err(e),
+        Err(_) => {}
+    };
 
     let mut xs: Vec<T> = Vec::with_capacity(values.len());
     let mut ixs: Vec<usize> = (0..values.len()).collect();
