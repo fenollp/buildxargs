@@ -325,7 +325,6 @@ Usage:  docker [OPTIONS] COMMAND
 
 A self-sufficient runtime for containers
 
-Options:
 Common Commands:
   run         Create and run a new container from an image
   exec        Execute a command in a running container
