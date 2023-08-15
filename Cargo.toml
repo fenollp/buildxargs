@@ -14,3 +14,8 @@ repository = "https://github.com/fenollp/buildxargs"
 clap = { version = "4", features = ["derive", "color"] }
 shlex = "1"
 tempfile = "3"
+
+[dev-dependencies]
+assert_cmd = "2"
+assert_fs = "1"
+predicates = "3"

@@ -1,6 +1,4 @@
-use std::collections::hash_map::Entry::Vacant;
-use std::collections::HashMap;
-use std::fmt::Display;
+use std::collections::{hash_map::Entry::Vacant, HashMap};
 
 // try_quick executes f on values slice and subslices when an error is returned
 // until maxdepth amounts of slicing happened.
@@ -8,19 +6,16 @@ use std::fmt::Display;
 pub fn try_quick<T, E, F>(values: &[T], maxdepth: u8, mut f: F) -> Result<HashMap<usize, String>, E>
 where
     T: Clone + std::fmt::Debug,
-    E: Display,
+    E: std::fmt::Display,
     F: FnMut(&[T]) -> Result<(), E>,
 {
     assert!(!values.is_empty());
 
-    let initial_attempt = f(values);
-    if let Ok(()) = initial_attempt {
-        return Ok(HashMap::new());
-    }
-    if maxdepth == 0 {
-        initial_attempt?;
-        unreachable!();
-    }
+    match f(values) {
+        Ok(()) => return Ok([].into()),
+        Err(e) if maxdepth == 0 => return Err(e),
+        Err(_) => {}
+    };
 
     let mut xs: Vec<T> = Vec::with_capacity(values.len());
     let mut ixs: Vec<usize> = (0..values.len()).collect();
@@ -60,44 +55,4 @@ where
     }
 
     Ok(failed)
-}
-
-#[test]
-fn test_bad_job_zero() {
-    let xs = (0..=99).collect::<Vec<_>>();
-
-    let err = format!("{}", "NaN".parse::<u32>().unwrap_err());
-
-    let ixs_failed = try_quick(&xs, 0, |subxs| {
-        if !subxs.contains(&0) {
-            Ok(())
-        } else {
-            Err(err.clone())
-        }
-    });
-    assert_eq!(ixs_failed, Err(err.clone()));
-
-    use std::ops::RangeInclusive as RI;
-    let errors = |range: RI<usize>| range.map(|v| (v, err.clone())).collect::<HashMap<_, _>>();
-
-    for (d, errors) in [
-        (1, errors(0..=49)),
-        (2, errors(0..=24)),
-        (3, errors(0..=11)),
-        (4, errors(0..=5)),
-        (5, errors(0..=2)),
-        (6, errors(0..=0)),
-        (7, errors(0..=0)),
-        (8, errors(0..=0)),
-        (9, errors(0..=0)),
-    ] {
-        let ixs_failed = try_quick(&xs, d, |subxs| {
-            if !subxs.contains(&0) {
-                Ok(())
-            } else {
-                Err(err.clone())
-            }
-        });
-        assert_eq!((d, ixs_failed), (d, Ok(errors)));
-    }
 }

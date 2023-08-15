@@ -46,7 +46,7 @@ OPTIONS:
 ## Installing
 
 ```shell
-cargo install --git https://github.com/fenollp/buildxargs
+cargo install --locked --git https://github.com/fenollp/buildxargs
 # also: install Docker ≥ 18.09
 ```
 
@@ -57,3 +57,12 @@ My [blog post about this](https://fenollp.github.io/buildxargs_xargs_for_buildki
 Related:
 * My [vi[sual]`xargs`](https://fenollp.github.io/vixargs-visual-xargs) tool
 * [`fmtd`](https://fenollp.github.io/a_simple_framework_for_universal_tools) and *a lib for piping data in & out of `docker build` tasks*
+
+## TODO
+
+* Spawn tasks in background, attach to display logs, cancel.
+```shell
+OPTIONS:
+        --attach ssh HOST -t /usr/bin/htop + replay daemon logs
+        --background Spawns calls using bg daemon and logs text back for log replain
+```
