@@ -51,11 +51,95 @@ fn cli_installed_docker_usage() {
 }
 
 #[inline]
-fn usages(version: &str) -> (&'static str, &'static str, &'static str) {
+fn usages(version: &str) -> (String, &'static str, &'static str) {
     let short: String = version.replace('+', " ").split_ascii_whitespace().take(2).collect();
     match short.as_str() {
-        "github.com/docker/buildxv0.11.1" => (
-            r#"
+        "github.com/docker/buildxv0.11.1" => {
+            (moby("v0.11.1", "v2.6.1"), DOCKER_BUILDX_BAKE, DOCKER_BUILDX_BUILD)
+        }
+        "github.com/docker/buildxv0.11.2" => {
+            (moby("v0.11.2", "v2.6.1"), DOCKER_BUILDX_BAKE, DOCKER_BUILDX_BUILD)
+        }
+
+        "github.com/docker/buildx0.11.1" => {
+            (azure("0.11.1+azure-1", "2.20.0+azure-1"), DOCKER_BUILDX_BAKE, DOCKER_BUILDX_BUILD)
+        }
+        "github.com/docker/buildx0.11.2" => {
+            (azure("0.11.2+azure-1", "2.20.0+azure-1"), DOCKER_BUILDX_BAKE, DOCKER_BUILDX_BUILD)
+        }
+
+        _ => ("UNHANDLED".to_owned(), "UNHANDLED", "UNHANDLED"),
+    }
+}
+
+const DOCKER_BUILDX_BAKE: &str = r#"
+Usage:  docker buildx bake [OPTIONS] [TARGET...]
+
+Build from a file
+
+Aliases:
+  docker buildx bake, docker buildx f
+
+Options:
+      --builder string         Override the configured builder instance
+  -f, --file stringArray       Build definition file
+      --load                   Shorthand for "--set=*.output=type=docker"
+      --metadata-file string   Write build result metadata to the file
+      --no-cache               Do not use cache when building the image
+      --print                  Print the options without building
+      --progress string        Set type of progress output ("auto", "plain", "tty"). Use plain to show container output (default "auto")
+      --provenance string      Shorthand for "--set=*.attest=type=provenance"
+      --pull                   Always attempt to pull all referenced images
+      --push                   Shorthand for "--set=*.output=type=registry"
+      --sbom string            Shorthand for "--set=*.attest=type=sbom"
+      --set stringArray        Override target value (e.g., "targetpattern.key=value")
+"#;
+
+const DOCKER_BUILDX_BUILD: &str = r#"
+Usage:  docker buildx build [OPTIONS] PATH | URL | -
+
+Start a build
+
+Aliases:
+  docker buildx build, docker buildx b
+
+Options:
+      --add-host strings              Add a custom host-to-IP mapping (format: "host:ip")
+      --allow strings                 Allow extra privileged entitlement (e.g., "network.host", "security.insecure")
+      --attest stringArray            Attestation parameters (format: "type=sbom,generator=image")
+      --build-arg stringArray         Set build-time variables
+      --build-context stringArray     Additional build contexts (e.g., name=path)
+      --builder string                Override the configured builder instance
+      --cache-from stringArray        External cache sources (e.g., "user/app:cache", "type=local,src=path/to/dir")
+      --cache-to stringArray          Cache export destinations (e.g., "user/app:cache", "type=local,dest=path/to/dir")
+      --cgroup-parent string          Optional parent cgroup for the container
+  -f, --file string                   Name of the Dockerfile (default: "PATH/Dockerfile")
+      --iidfile string                Write the image ID to the file
+      --label stringArray             Set metadata for an image
+      --load                          Shorthand for "--output=type=docker"
+      --metadata-file string          Write build result metadata to the file
+      --network string                Set the networking mode for the "RUN" instructions during build (default "default")
+      --no-cache                      Do not use cache when building the image
+      --no-cache-filter stringArray   Do not cache specified stages
+  -o, --output stringArray            Output destination (format: "type=local,dest=path")
+      --platform stringArray          Set target platform for build
+      --progress string               Set type of progress output ("auto", "plain", "tty"). Use plain to show container output (default "auto")
+      --provenance string             Shorthand for "--attest=type=provenance"
+      --pull                          Always attempt to pull all referenced images
+      --push                          Shorthand for "--output=type=registry"
+  -q, --quiet                         Suppress the build output and print image ID on success
+      --sbom string                   Shorthand for "--attest=type=sbom"
+      --secret stringArray            Secret to expose to the build (format: "id=mysecret[,src=/local/secret]")
+      --shm-size bytes                Size of "/dev/shm"
+      --ssh stringArray               SSH agent socket or keys to expose to the build (format: "default|<id>[=<socket>|<key>[,<key>]]")
+  -t, --tag stringArray               Name and optionally a tag (format: "name:tag")
+      --target string                 Set the target build stage to build
+      --ulimit ulimit                 Ulimit options (default [])
+"#;
+
+fn moby(buildx: &str, compose: &str) -> String {
+    format!(
+        r#"
 Usage:  docker [OPTIONS] COMMAND
 
 A self-sufficient runtime for containers
@@ -76,8 +160,8 @@ Common Commands:
 
 Management Commands:
   builder     Manage builds
-  buildx*     Docker Buildx (Docker Inc., v0.11.1)
-  compose*    Docker Compose (Docker Inc., v2.6.1)
+  buildx*     Docker Buildx (Docker Inc., {buildx})
+  compose*    Docker Compose (Docker Inc., {compose})
   container   Manage containers
   context     Manage contexts
   image       Manage images
@@ -138,74 +222,13 @@ Global Options:
 Run 'docker COMMAND --help' for more information on a command.
 
 For more help on how to use Docker, head to https://docs.docker.com/go/guides/
-"#,
-            r#"
-Usage:  docker buildx bake [OPTIONS] [TARGET...]
+"#
+    )
+}
 
-Build from a file
-
-Aliases:
-  docker buildx bake, docker buildx f
-
-Options:
-      --builder string         Override the configured builder instance
-  -f, --file stringArray       Build definition file
-      --load                   Shorthand for "--set=*.output=type=docker"
-      --metadata-file string   Write build result metadata to the file
-      --no-cache               Do not use cache when building the image
-      --print                  Print the options without building
-      --progress string        Set type of progress output ("auto", "plain", "tty"). Use plain to show container output (default "auto")
-      --provenance string      Shorthand for "--set=*.attest=type=provenance"
-      --pull                   Always attempt to pull all referenced images
-      --push                   Shorthand for "--set=*.output=type=registry"
-      --sbom string            Shorthand for "--set=*.attest=type=sbom"
-      --set stringArray        Override target value (e.g., "targetpattern.key=value")
-"#,
-            r#"
-Usage:  docker buildx build [OPTIONS] PATH | URL | -
-
-Start a build
-
-Aliases:
-  docker buildx build, docker buildx b
-
-Options:
-      --add-host strings              Add a custom host-to-IP mapping (format: "host:ip")
-      --allow strings                 Allow extra privileged entitlement (e.g., "network.host", "security.insecure")
-      --attest stringArray            Attestation parameters (format: "type=sbom,generator=image")
-      --build-arg stringArray         Set build-time variables
-      --build-context stringArray     Additional build contexts (e.g., name=path)
-      --builder string                Override the configured builder instance
-      --cache-from stringArray        External cache sources (e.g., "user/app:cache", "type=local,src=path/to/dir")
-      --cache-to stringArray          Cache export destinations (e.g., "user/app:cache", "type=local,dest=path/to/dir")
-      --cgroup-parent string          Optional parent cgroup for the container
-  -f, --file string                   Name of the Dockerfile (default: "PATH/Dockerfile")
-      --iidfile string                Write the image ID to the file
-      --label stringArray             Set metadata for an image
-      --load                          Shorthand for "--output=type=docker"
-      --metadata-file string          Write build result metadata to the file
-      --network string                Set the networking mode for the "RUN" instructions during build (default "default")
-      --no-cache                      Do not use cache when building the image
-      --no-cache-filter stringArray   Do not cache specified stages
-  -o, --output stringArray            Output destination (format: "type=local,dest=path")
-      --platform stringArray          Set target platform for build
-      --progress string               Set type of progress output ("auto", "plain", "tty"). Use plain to show container output (default "auto")
-      --provenance string             Shorthand for "--attest=type=provenance"
-      --pull                          Always attempt to pull all referenced images
-      --push                          Shorthand for "--output=type=registry"
-  -q, --quiet                         Suppress the build output and print image ID on success
-      --sbom string                   Shorthand for "--attest=type=sbom"
-      --secret stringArray            Secret to expose to the build (format: "id=mysecret[,src=/local/secret]")
-      --shm-size bytes                Size of "/dev/shm"
-      --ssh stringArray               SSH agent socket or keys to expose to the build (format: "default|<id>[=<socket>|<key>[,<key>]]")
-  -t, --tag stringArray               Name and optionally a tag (format: "name:tag")
-      --target string                 Set the target build stage to build
-      --ulimit ulimit                 Ulimit options (default [])
-"#,
-        ),
-
-        "github.com/docker/buildx0.11.1" => (
-            r#"
+fn azure(buildx: &str, compose: &str) -> String {
+    format!(
+        r#"
 Usage:  docker [OPTIONS] COMMAND
 
 A self-sufficient runtime for containers
@@ -225,8 +248,8 @@ Options:
 
 Management Commands:
   builder     Manage builds
-  buildx*     Docker Buildx (Docker Inc., 0.11.1+azure-1)
-  compose*    Docker Compose (Docker Inc., 2.20.0+azure-1)
+  buildx*     Docker Buildx (Docker Inc., {buildx})
+  compose*    Docker Compose (Docker Inc., {compose})
   config      Manage Docker configs
   container   Manage containers
   context     Manage contexts
@@ -288,72 +311,6 @@ Commands:
 Run 'docker COMMAND --help' for more information on a command.
 
 To get more help with docker, check out our guides at https://docs.docker.com/go/guides/
-"#,
-            r#"
-Usage:  docker buildx bake [OPTIONS] [TARGET...]
-
-Build from a file
-
-Aliases:
-  docker buildx bake, docker buildx f
-
-Options:
-      --builder string         Override the configured builder instance
-  -f, --file stringArray       Build definition file
-      --load                   Shorthand for "--set=*.output=type=docker"
-      --metadata-file string   Write build result metadata to the file
-      --no-cache               Do not use cache when building the image
-      --print                  Print the options without building
-      --progress string        Set type of progress output ("auto", "plain", "tty"). Use plain to show container output (default "auto")
-      --provenance string      Shorthand for "--set=*.attest=type=provenance"
-      --pull                   Always attempt to pull all referenced images
-      --push                   Shorthand for "--set=*.output=type=registry"
-      --sbom string            Shorthand for "--set=*.attest=type=sbom"
-      --set stringArray        Override target value (e.g., "targetpattern.key=value")
-"#,
-            r#"
-Usage:  docker buildx build [OPTIONS] PATH | URL | -
-
-Start a build
-
-Aliases:
-  docker buildx build, docker buildx b
-
-Options:
-      --add-host strings              Add a custom host-to-IP mapping (format: "host:ip")
-      --allow strings                 Allow extra privileged entitlement (e.g., "network.host", "security.insecure")
-      --attest stringArray            Attestation parameters (format: "type=sbom,generator=image")
-      --build-arg stringArray         Set build-time variables
-      --build-context stringArray     Additional build contexts (e.g., name=path)
-      --builder string                Override the configured builder instance
-      --cache-from stringArray        External cache sources (e.g., "user/app:cache", "type=local,src=path/to/dir")
-      --cache-to stringArray          Cache export destinations (e.g., "user/app:cache", "type=local,dest=path/to/dir")
-      --cgroup-parent string          Optional parent cgroup for the container
-  -f, --file string                   Name of the Dockerfile (default: "PATH/Dockerfile")
-      --iidfile string                Write the image ID to the file
-      --label stringArray             Set metadata for an image
-      --load                          Shorthand for "--output=type=docker"
-      --metadata-file string          Write build result metadata to the file
-      --network string                Set the networking mode for the "RUN" instructions during build (default "default")
-      --no-cache                      Do not use cache when building the image
-      --no-cache-filter stringArray   Do not cache specified stages
-  -o, --output stringArray            Output destination (format: "type=local,dest=path")
-      --platform stringArray          Set target platform for build
-      --progress string               Set type of progress output ("auto", "plain", "tty"). Use plain to show container output (default "auto")
-      --provenance string             Shorthand for "--attest=type=provenance"
-      --pull                          Always attempt to pull all referenced images
-      --push                          Shorthand for "--output=type=registry"
-  -q, --quiet                         Suppress the build output and print image ID on success
-      --sbom string                   Shorthand for "--attest=type=sbom"
-      --secret stringArray            Secret to expose to the build (format: "id=mysecret[,src=/local/secret]")
-      --shm-size bytes                Size of "/dev/shm"
-      --ssh stringArray               SSH agent socket or keys to expose to the build (format: "default|<id>[=<socket>|<key>[,<key>]]")
-  -t, --tag stringArray               Name and optionally a tag (format: "name:tag")
-      --target string                 Set the target build stage to build
-      --ulimit ulimit                 Ulimit options (default [])
-"#,
-        ),
-
-        _ => ("UNHANDLED", "UNHANDLED", "UNHANDLED"),
-    }
+"#
+    )
 }
