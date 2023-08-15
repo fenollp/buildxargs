@@ -26,7 +26,7 @@ jobs:
         args: run --all-targets --all-features --locked --frozen --offline
     - uses: actions-rs/cargo@v1
       with:
-        command: nextest run
+        command: nextest
         args: run --all-targets --all-features --locked --frozen --offline --release
 
   fmt:
