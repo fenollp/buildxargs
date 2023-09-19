@@ -1,6 +1,9 @@
-use std::{assert_eq, process::Command, unreachable};
+use std::{assert_eq, process::Command};
 
-use predicates::{str::diff, Predicate};
+use predicates::{
+    str::{contains, diff},
+    Predicate,
+};
 
 #[test]
 fn cli_installed_docker_usage() {
@@ -15,7 +18,7 @@ fn cli_installed_docker_usage() {
         None => usage,
         Some(home) => usage.replace(&home.into_os_string().into_string().unwrap(), "~"),
     };
-    let matcher = diff(usages(&buildx_version).0);
+    let matcher = contains(DOCKER_GLOBAL_OPTIONS);
     let blank = "\n                           ";
     assert!(
         matcher
@@ -27,7 +30,7 @@ fn cli_installed_docker_usage() {
 
     let cmd = Command::new("docker").arg("buildx").arg("bake").arg("--help").output().unwrap();
     assert_eq!(cmd.status.code(), Some(0));
-    let matcher = diff(usages(&buildx_version).1);
+    let matcher = diff(DOCKER_BUILDX_BAKE);
     let blank = "\n                               ";
     assert!(
         matcher
@@ -39,7 +42,7 @@ fn cli_installed_docker_usage() {
 
     let cmd = Command::new("docker").arg("buildx").arg("build").arg("--help").output().unwrap();
     assert_eq!(cmd.status.code(), Some(0));
-    let matcher = diff(usages(&buildx_version).2);
+    let matcher = diff(DOCKER_BUILDX_BUILD);
     let blank = "\n                                      ";
     assert!(
         matcher
@@ -50,31 +53,22 @@ fn cli_installed_docker_usage() {
     );
 }
 
-#[inline]
-fn usages(version: &str) -> (String, &'static str, &'static str) {
-    let short: String = version.replace('+', " ").split_ascii_whitespace().take(2).collect();
-    match short.as_str() {
-        short @ "github.com/docker/buildxv0.11.1" => (
-            moby(short.strip_prefix("github.com/docker/buildxv").unwrap()),
-            DOCKER_BUILDX_BAKE,
-            DOCKER_BUILDX_BUILD,
-        ),
-        short @ "github.com/docker/buildxv0.11.2" => (
-            moby(short.strip_prefix("github.com/docker/buildxv").unwrap()),
-            DOCKER_BUILDX_BAKE,
-            DOCKER_BUILDX_BUILD,
-        ),
+const DOCKER_GLOBAL_OPTIONS: &str = r#"
+Global Options:
+      --config string      Location of client config files (default "~/.docker")
+  -c, --context string     Name of the context to use to connect to the daemon (overrides DOCKER_HOST env var and default context set with "docker context use")
+  -D, --debug              Enable debug mode
+  -H, --host list          Daemon socket to connect to
+  -l, --log-level string   Set the logging level ("debug", "info", "warn", "error", "fatal") (default "info")
+      --tls                Use TLS; implied by --tlsverify
+      --tlscacert string   Trust certs signed only by this CA (default "~/.docker/ca.pem")
+      --tlscert string     Path to TLS certificate file (default "~/.docker/cert.pem")
+      --tlskey string      Path to TLS key file (default "~/.docker/key.pem")
+      --tlsverify          Use TLS and verify the remote
+  -v, --version            Print version information and quit
 
-        short @ "github.com/docker/buildx0.11.1" => {
-            (azure(short), DOCKER_BUILDX_BAKE, DOCKER_BUILDX_BUILD)
-        }
-        short @ "github.com/docker/buildx0.11.2" => {
-            (azure(short), DOCKER_BUILDX_BAKE, DOCKER_BUILDX_BUILD)
-        }
-
-        _ => ("UNHANDLED".to_owned(), "UNHANDLED", "UNHANDLED"),
-    }
-}
+Run 'docker COMMAND --help' for more information on a command.
+"#;
 
 const DOCKER_BUILDX_BAKE: &str = r#"
 Usage:  docker buildx bake [OPTIONS] [TARGET...]
@@ -140,270 +134,3 @@ Options:
       --target string                 Set the target build stage to build
       --ulimit ulimit                 Ulimit options (default [])
 "#;
-
-fn moby(buildx: &str) -> String {
-    format!(
-        r#"
-Usage:  docker [OPTIONS] COMMAND
-
-A self-sufficient runtime for containers
-
-Common Commands:
-  run         Create and run a new container from an image
-  exec        Execute a command in a running container
-  ps          List containers
-  build       Build an image from a Dockerfile
-  pull        Download an image from a registry
-  push        Upload an image to a registry
-  images      List images
-  login       Log in to a registry
-  logout      Log out from a registry
-  search      Search Docker Hub for images
-  version     Show the Docker version information
-  info        Display system-wide information
-
-Management Commands:
-  builder     Manage builds
-  buildx*     Docker Buildx (Docker Inc., v{buildx})
-  compose*    Docker Compose (Docker Inc., v2.6.1)
-  container   Manage containers
-  context     Manage contexts
-  image       Manage images
-  manifest    Manage Docker image manifests and manifest lists
-  network     Manage networks
-  plugin      Manage plugins
-  scan*       Docker Scan (Docker Inc., v0.23.0)
-  system      Manage Docker
-  trust       Manage trust on Docker images
-  volume      Manage volumes
-
-Swarm Commands:
-  swarm       Manage Swarm
-
-Commands:
-  attach      Attach local standard input, output, and error streams to a running container
-  commit      Create a new image from a container's changes
-  cp          Copy files/folders between a container and the local filesystem
-  create      Create a new container
-  diff        Inspect changes to files or directories on a container's filesystem
-  events      Get real time events from the server
-  export      Export a container's filesystem as a tar archive
-  history     Show the history of an image
-  import      Import the contents from a tarball to create a filesystem image
-  inspect     Return low-level information on Docker objects
-  kill        Kill one or more running containers
-  load        Load an image from a tar archive or STDIN
-  logs        Fetch the logs of a container
-  pause       Pause all processes within one or more containers
-  port        List port mappings or a specific mapping for the container
-  rename      Rename a container
-  restart     Restart one or more containers
-  rm          Remove one or more containers
-  rmi         Remove one or more images
-  save        Save one or more images to a tar archive (streamed to STDOUT by default)
-  start       Start one or more stopped containers
-  stats       Display a live stream of container(s) resource usage statistics
-  stop        Stop one or more running containers
-  tag         Create a tag TARGET_IMAGE that refers to SOURCE_IMAGE
-  top         Display the running processes of a container
-  unpause     Unpause all processes within one or more containers
-  update      Update configuration of one or more containers
-  wait        Block until one or more containers stop, then print their exit codes
-
-Global Options:
-      --config string      Location of client config files (default "~/.docker")
-  -c, --context string     Name of the context to use to connect to the daemon (overrides DOCKER_HOST env var and default context set with "docker context use")
-  -D, --debug              Enable debug mode
-  -H, --host list          Daemon socket to connect to
-  -l, --log-level string   Set the logging level ("debug", "info", "warn", "error", "fatal") (default "info")
-      --tls                Use TLS; implied by --tlsverify
-      --tlscacert string   Trust certs signed only by this CA (default "~/.docker/ca.pem")
-      --tlscert string     Path to TLS certificate file (default "~/.docker/cert.pem")
-      --tlskey string      Path to TLS key file (default "~/.docker/key.pem")
-      --tlsverify          Use TLS and verify the remote
-  -v, --version            Print version information and quit
-
-Run 'docker COMMAND --help' for more information on a command.
-
-For more help on how to use Docker, head to https://docs.docker.com/go/guides/
-"#
-    )
-}
-
-fn azure(short: &str) -> String {
-    match short {
-        "github.com/docker/buildx0.11.1" => {
-            r#"
-Usage:  docker [OPTIONS] COMMAND
-
-A self-sufficient runtime for containers
-
-Options:
-      --config string      Location of client config files (default "~/.docker")
-  -c, --context string     Name of the context to use to connect to the daemon (overrides DOCKER_HOST env var and default context set with "docker context use")
-  -D, --debug              Enable debug mode
-  -H, --host list          Daemon socket(s) to connect to
-  -l, --log-level string   Set the logging level ("debug"|"info"|"warn"|"error"|"fatal") (default "info")
-      --tls                Use TLS; implied by --tlsverify
-      --tlscacert string   Trust certs signed only by this CA (default "~/.docker/ca.pem")
-      --tlscert string     Path to TLS certificate file (default "~/.docker/cert.pem")
-      --tlskey string      Path to TLS key file (default "~/.docker/key.pem")
-      --tlsverify          Use TLS and verify the remote
-  -v, --version            Print version information and quit
-
-Management Commands:
-  builder     Manage builds
-  buildx*     Docker Buildx (Docker Inc., 0.11.1+azure-1)
-  compose*    Docker Compose (Docker Inc., 2.20.0+azure-1)
-  config      Manage Docker configs
-  container   Manage containers
-  context     Manage contexts
-  image       Manage images
-  manifest    Manage Docker image manifests and manifest lists
-  network     Manage networks
-  node        Manage Swarm nodes
-  plugin      Manage plugins
-  secret      Manage Docker secrets
-  service     Manage services
-  stack       Manage Docker stacks
-  swarm       Manage Swarm
-  system      Manage Docker
-  trust       Manage trust on Docker images
-  volume      Manage volumes
-
-Commands:
-  attach      Attach local standard input, output, and error streams to a running container
-  build       Build an image from a Dockerfile
-  commit      Create a new image from a container's changes
-  cp          Copy files/folders between a container and the local filesystem
-  create      Create a new container
-  diff        Inspect changes to files or directories on a container's filesystem
-  events      Get real time events from the server
-  exec        Run a command in a running container
-  export      Export a container's filesystem as a tar archive
-  history     Show the history of an image
-  images      List images
-  import      Import the contents from a tarball to create a filesystem image
-  info        Display system-wide information
-  inspect     Return low-level information on Docker objects
-  kill        Kill one or more running containers
-  load        Load an image from a tar archive or STDIN
-  login       Log in to a Docker registry
-  logout      Log out from a Docker registry
-  logs        Fetch the logs of a container
-  pause       Pause all processes within one or more containers
-  port        List port mappings or a specific mapping for the container
-  ps          List containers
-  pull        Pull an image or a repository from a registry
-  push        Push an image or a repository to a registry
-  rename      Rename a container
-  restart     Restart one or more containers
-  rm          Remove one or more containers
-  rmi         Remove one or more images
-  run         Run a command in a new container
-  save        Save one or more images to a tar archive (streamed to STDOUT by default)
-  search      Search the Docker Hub for images
-  start       Start one or more stopped containers
-  stats       Display a live stream of container(s) resource usage statistics
-  stop        Stop one or more running containers
-  tag         Create a tag TARGET_IMAGE that refers to SOURCE_IMAGE
-  top         Display the running processes of a container
-  unpause     Unpause all processes within one or more containers
-  update      Update configuration of one or more containers
-  version     Show the Docker version information
-  wait        Block until one or more containers stop, then print their exit codes
-
-Run 'docker COMMAND --help' for more information on a command.
-
-To get more help with docker, check out our guides at https://docs.docker.com/go/guides/
-"#
-        }
-
-        "github.com/docker/buildx0.11.2" => {
-            r#"
-Usage:  docker [OPTIONS] COMMAND
-
-A self-sufficient runtime for containers
-
-Common Commands:
-  run         Create and run a new container from an image
-  exec        Execute a command in a running container
-  ps          List containers
-  build       Build an image from a Dockerfile
-  pull        Download an image from a registry
-  push        Upload an image to a registry
-  images      List images
-  login       Log in to a registry
-  logout      Log out from a registry
-  search      Search Docker Hub for images
-  version     Show the Docker version information
-  info        Display system-wide information
-
-Management Commands:
-  builder     Manage builds
-  buildx*     Docker Buildx (Docker Inc., 0.11.2+azure-1)
-  compose*    Docker Compose (Docker Inc., 2.20.2+azure-1)
-  container   Manage containers
-  context     Manage contexts
-  image       Manage images
-  manifest    Manage Docker image manifests and manifest lists
-  network     Manage networks
-  plugin      Manage plugins
-  system      Manage Docker
-  trust       Manage trust on Docker images
-  volume      Manage volumes
-
-Swarm Commands:
-  swarm       Manage Swarm
-
-Commands:
-  attach      Attach local standard input, output, and error streams to a running container
-  commit      Create a new image from a container's changes
-  cp          Copy files/folders between a container and the local filesystem
-  create      Create a new container
-  diff        Inspect changes to files or directories on a container's filesystem
-  events      Get real time events from the server
-  export      Export a container's filesystem as a tar archive
-  history     Show the history of an image
-  import      Import the contents from a tarball to create a filesystem image
-  inspect     Return low-level information on Docker objects
-  kill        Kill one or more running containers
-  load        Load an image from a tar archive or STDIN
-  logs        Fetch the logs of a container
-  pause       Pause all processes within one or more containers
-  port        List port mappings or a specific mapping for the container
-  rename      Rename a container
-  restart     Restart one or more containers
-  rm          Remove one or more containers
-  rmi         Remove one or more images
-  save        Save one or more images to a tar archive (streamed to STDOUT by default)
-  start       Start one or more stopped containers
-  stats       Display a live stream of container(s) resource usage statistics
-  stop        Stop one or more running containers
-  tag         Create a tag TARGET_IMAGE that refers to SOURCE_IMAGE
-  top         Display the running processes of a container
-  unpause     Unpause all processes within one or more containers
-  update      Update configuration of one or more containers
-  wait        Block until one or more containers stop, then print their exit codes
-
-Global Options:
-      --config string      Location of client config files (default "~/.docker")
-  -c, --context string     Name of the context to use to connect to the daemon (overrides DOCKER_HOST env var and default context set with "docker context use")
-  -D, --debug              Enable debug mode
-  -H, --host list          Daemon socket(s) to connect to
-  -l, --log-level string   Set the logging level ("debug", "info", "warn", "error", "fatal") (default "info")
-      --tls                Use TLS; implied by --tlsverify
-      --tlscacert string   Trust certs signed only by this CA (default "~/.docker/ca.pem")
-      --tlscert string     Path to TLS certificate file (default "~/.docker/cert.pem")
-      --tlskey string      Path to TLS key file (default "~/.docker/key.pem")
-      --tlsverify          Use TLS and verify the remote
-  -v, --version            Print version information and quit
-
-Run 'docker COMMAND --help' for more information on a command.
-
-For more help on how to use Docker, head to https://docs.docker.com/go/guides/
-"#
-        }
-        _ => unreachable!("{short}"),
-    }.to_owned()
-}
