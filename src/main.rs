@@ -1,12 +1,21 @@
+// use no_panic::no_panic;
 use std::{
     fs::File,
     io::{stderr, stdin, BufRead, BufReader, Write},
     process::{Command, ExitStatus},
 };
 
+use assert_no_alloc::assert_no_alloc;
 use buildxargs::try_quick;
 use clap::Parser;
 use tempfile::NamedTempFile;
+
+#[cfg(test)]
+mod contracts;
+
+#[cfg(debug_assertions)] // Never in release mode
+#[global_allocator]
+static A: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
 
 type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
@@ -43,6 +52,7 @@ struct CliArgs {
     retry: u8,
 }
 
+// #[no_panic]
 fn main() -> Res<()> {
     let args = CliArgs::parse();
 
@@ -110,6 +120,7 @@ fn main() -> Res<()> {
     Ok(())
 }
 
+// #[no_panic]
 fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Res<ExitStatus> {
     let mut command = Command::new("docker");
     command.env("DOCKER_BUILDKIT", "1");
@@ -136,6 +147,7 @@ fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Res<ExitStatus> {
     Ok(command.status()?)
 }
 
+// #[no_panic]
 fn parse_shell_commands(cmds: &[String]) -> Res<Vec<DockerBuildArgs>> {
     let mut targets = Vec::with_capacity(cmds.len());
     for cmd in cmds {
@@ -160,93 +172,96 @@ fn parse_shell_commands(cmds: &[String]) -> Res<Vec<DockerBuildArgs>> {
     Ok(targets)
 }
 
+// #[no_panic]
 fn write_as_buildx_bake(f: &mut impl Write, targets: &[DockerBuildArgs]) -> Res<()> {
-    writeln!(f, "group \"default\" {{\n  targets = [")?;
-    for i in 1..=targets.len() {
-        writeln!(f, "    \"{i}\",")?;
-    }
-    writeln!(f, "  ]\n}}")?;
-    for (i, target) in targets.iter().enumerate() {
-        let (i, DockerBuild::Build(target)) = (i + 1, &target.build);
-        writeln!(f, "target \"{i}\" {{")?;
+    assert_no_alloc(|| {
+        writeln!(f, "group \"default\" {{\n  targets = [")?;
+        for i in 1..=targets.len() {
+            writeln!(f, "    \"{i}\",")?;
+        }
+        writeln!(f, "  ]\n}}")?;
+        for (i, target) in targets.iter().enumerate() {
+            let (i, DockerBuild::Build(target)) = (i + 1, &target.build);
+            writeln!(f, "target \"{i}\" {{")?;
 
-        if !target.build_args.is_empty() {
-            writeln!(f, "  args = {{")?;
-            for arg in &target.build_args {
-                match arg.split_once('=') {
-                    Some((key, value)) => writeln!(f, "    {key:?} = {value:?}")?,
-                    None => return Err(format!("bad key=value: {arg:?}").into()),
+            if !target.build_args.is_empty() {
+                writeln!(f, "  args = {{")?;
+                for arg in &target.build_args {
+                    match arg.split_once('=') {
+                        Some((key, value)) => writeln!(f, "    {key:?} = {value:?}")?,
+                        None => return Err(format!("bad key=value: {arg:?}").into()),
+                    }
                 }
+                writeln!(f, "  }}")?;
             }
-            writeln!(f, "  }}")?;
+
+            if let Some(cache_from) = &target.cache_from {
+                writeln!(f, "  cache-from = [{cache_from:?}]")?;
+            }
+
+            if let Some(cache_to) = &target.cache_to {
+                writeln!(f, "  cache-to = [{cache_to:?}]")?;
+            }
+
+            let context = &target.path_or_url;
+            writeln!(f, "  context = {context:?}")?;
+
+            if let Some(build_context) = &target.build_context {
+                writeln!(f, "  contexts = [{build_context:?}]")?;
+            }
+
+            if let Some(file) = &target.file {
+                writeln!(f, "  dockerfile = {file:?}")?;
+            }
+
+            if let Some(label) = &target.label {
+                writeln!(f, "  labels = [{label:?}]")?;
+            }
+
+            if let Some(network) = &target.network {
+                writeln!(f, "  network = {network:?}")?;
+            }
+
+            if target.no_cache {
+                writeln!(f, "  no-cache = true")?;
+            }
+
+            if let Some(no_cache_filter) = &target.no_cache_filter {
+                writeln!(f, "  no-cache-filter = [{no_cache_filter:?}]")?;
+            }
+
+            if let Some(output) = &target.output {
+                writeln!(f, "  output = [{output:?}]")?;
+            }
+
+            if let Some(platform) = &target.platform {
+                writeln!(f, "  platforms = [{platform:?}]")?;
+            }
+
+            if target.pull {
+                writeln!(f, "  pull = true")?;
+            }
+
+            if let Some(secret) = &target.secret {
+                writeln!(f, "  secrets = [{secret:?}]")?;
+            }
+
+            if let Some(ssh) = &target.ssh {
+                writeln!(f, "  ssh = [{ssh:?}]")?;
+            }
+
+            if let Some(tag) = &target.tag {
+                writeln!(f, "  tags = [{tag:?}]")?;
+            }
+
+            if let Some(target) = &target.target {
+                writeln!(f, "  target = [{target:?}]")?;
+            }
+
+            writeln!(f, "}}")?;
         }
-
-        if let Some(cache_from) = &target.cache_from {
-            writeln!(f, "  cache-from = [{cache_from:?}]")?;
-        }
-
-        if let Some(cache_to) = &target.cache_to {
-            writeln!(f, "  cache-to = [{cache_to:?}]")?;
-        }
-
-        let context = &target.path_or_url;
-        writeln!(f, "  context = {context:?}")?;
-
-        if let Some(build_context) = &target.build_context {
-            writeln!(f, "  contexts = [{build_context:?}]")?;
-        }
-
-        if let Some(file) = &target.file {
-            writeln!(f, "  dockerfile = {file:?}")?;
-        }
-
-        if let Some(label) = &target.label {
-            writeln!(f, "  labels = [{label:?}]")?;
-        }
-
-        if let Some(network) = &target.network {
-            writeln!(f, "  network = {network:?}")?;
-        }
-
-        if target.no_cache {
-            writeln!(f, "  no-cache = true")?;
-        }
-
-        if let Some(no_cache_filter) = &target.no_cache_filter {
-            writeln!(f, "  no-cache-filter = [{no_cache_filter:?}]")?;
-        }
-
-        if let Some(output) = &target.output {
-            writeln!(f, "  output = [{output:?}]")?;
-        }
-
-        if let Some(platform) = &target.platform {
-            writeln!(f, "  platforms = [{platform:?}]")?;
-        }
-
-        if target.pull {
-            writeln!(f, "  pull = true")?;
-        }
-
-        if let Some(secret) = &target.secret {
-            writeln!(f, "  secrets = [{secret:?}]")?;
-        }
-
-        if let Some(ssh) = &target.ssh {
-            writeln!(f, "  ssh = [{ssh:?}]")?;
-        }
-
-        if let Some(tag) = &target.tag {
-            writeln!(f, "  tags = [{tag:?}]")?;
-        }
-
-        if let Some(target) = &target.target {
-            writeln!(f, "  target = [{target:?}]")?;
-        }
-
-        writeln!(f, "}}")?;
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 #[derive(Parser, Debug, Clone)]
