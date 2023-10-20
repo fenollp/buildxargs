@@ -1,6 +1,6 @@
 use std::collections::{hash_map::Entry, HashMap};
 
-use assert_no_alloc::assert_no_alloc;
+use assert_no_alloc::assert_no_alloc; // https://docs.rs/allocation-counter/latest/allocation_counter/
 
 // TODO: #[no_panic]
 // try_quick executes f on values slice and subslices when an error is returned
