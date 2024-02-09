@@ -104,13 +104,14 @@ Aliases:
 Options:
       --add-host strings              Add a custom host-to-IP mapping (format: "host:ip")
       --allow strings                 Allow extra privileged entitlement (e.g., "network.host", "security.insecure")
+      --annotation stringArray        Add annotation to the image
       --attest stringArray            Attestation parameters (format: "type=sbom,generator=image")
       --build-arg stringArray         Set build-time variables
       --build-context stringArray     Additional build contexts (e.g., name=path)
       --builder string                Override the configured builder instance
       --cache-from stringArray        External cache sources (e.g., "user/app:cache", "type=local,src=path/to/dir")
       --cache-to stringArray          Cache export destinations (e.g., "user/app:cache", "type=local,dest=path/to/dir")
-      --cgroup-parent string          Optional parent cgroup for the container
+      --cgroup-parent string          Set the parent cgroup for the "RUN" instructions during build
   -f, --file string                   Name of the Dockerfile (default: "PATH/Dockerfile")
       --iidfile string                Write the image ID to the file
       --label stringArray             Set metadata for an image
