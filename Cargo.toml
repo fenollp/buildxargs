@@ -8,10 +8,10 @@ keywords = ["xargs", "buildkit", "docker", "visualization"]
 license = "MIT"
 repository = "https://github.com/fenollp/buildxargs"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+assert_no_alloc = "1"
 clap = { version = "4", features = ["derive", "color"] }
+no-panic = "0.1"
 shlex = "1"
 tempfile = "3"
 
@@ -19,3 +19,11 @@ tempfile = "3"
 assert_cmd = "2"
 assert_fs = "1"
 predicates = "3"
+
+[profile.dev]
+lto = "thin"  # no_panic
+opt-level = 1 # no_panic
+
+[profile.test]
+lto = "thin"  # no_panic
+opt-level = 1 # no_panic
