@@ -142,10 +142,9 @@ fn parse_shell_commands(cmds: &[String]) -> Res<Vec<DockerBuildArgs>> {
         match shlex::split(cmd) {
             None => return Err(format!("Typo in {cmd}").into()),
             Some(words) => {
-                let build_args = DockerBuildArgs::try_parse_from(words).map_err(|e| {
+                let build_args = DockerBuildArgs::try_parse_from(words).inspect_err(|e| {
                     eprintln!("Could not parse {cmd}");
                     e.print().expect("Error printing error");
-                    e
                 })?;
 
                 // TODO: decide how to use these instead of failing
