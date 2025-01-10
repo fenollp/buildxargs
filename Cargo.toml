@@ -1,6 +1,6 @@
 [package]
 name = "buildxargs"
-version = "1.2.0"
+version = "1.3.0"
 edition = "2021"
 authors = ["Pierre Fenoll <pierrefenoll@gmail.com>"]
 description = "xargs for BuildKit with docker buildx bake"
