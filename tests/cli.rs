@@ -3,9 +3,9 @@ use assert_fs::prelude::{FileWriteStr, PathChild};
 use predicates::{prelude::PredicateBooleanExt, str::contains};
 
 const COMMANDS: &str = r#"
-docker build                          --build-arg DO_NOT_REENCODE=1 --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc' --output=$TMP https://github.com/fenollp/dockerhost-tools--yt-dlp.git
-docker build -o=$TMP --platform=local --build-arg PREBUILT=1 https://github.com/FuzzyMonkeyCo/monkey.git
-docker build         --platform=local -o $TMP                https://github.com/docker/buildx.git
+docker build                          --allow=fs.write=$TMP --build-arg DO_NOT_REENCODE=1 --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc' --output=$TMP https://github.com/fenollp/dockerhost-tools--yt-dlp.git
+docker build -o=$TMP --platform=local --allow=fs.write=$TMP --build-arg PREBUILT=1 https://github.com/FuzzyMonkeyCo/monkey.git
+docker build         --platform=local --allow=fs.write=$TMP -o $TMP                https://github.com/docker/buildx.git
 "#;
 
 const PRINTED: &str = r#"{

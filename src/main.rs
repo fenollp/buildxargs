@@ -1,6 +1,7 @@
 use std::{
     fs::File,
     io::{stderr, stdin, BufRead, BufReader, Write},
+    iter::once,
     process::{Command, ExitStatus},
 };
 
@@ -14,6 +15,10 @@ type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + '
 #[clap(author, version, about, long_about=None)]
 // CliArgs correspond to `docker buildx bake --help`
 struct CliArgs {
+    /// Allow build to access specified resources
+    #[arg(long = "allow")]
+    allow: Option<String>,
+
     /// Read commands from file.
     #[arg(short, long="file", default_value_t=String::from("-"))]
     file: String,
@@ -126,6 +131,19 @@ fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Res<ExitStatus> {
         command.arg("--pull");
     }
 
+    let entitlements =
+        targets.iter().map(|t| &t.build).filter_map(|DockerBuild::Build(t)| t.allow.as_deref());
+    let mut entitlements: Vec<&str> = if let Some(ref allow) = args.allow {
+        entitlements.chain(once(allow.as_ref())).collect()
+    } else {
+        entitlements.collect()
+    };
+    if !entitlements.is_empty() {
+        entitlements.sort();
+        entitlements.dedup();
+        command.arg(format!("--allow={}", entitlements.join(",")));
+    }
+
     let mut f = NamedTempFile::new()?;
     write_as_buildx_bake(&mut f, targets)?;
     f.flush()?;
@@ -168,6 +186,12 @@ fn write_as_buildx_bake(f: &mut impl Write, targets: &[DockerBuildArgs]) -> Res<
     for (i, target) in targets.iter().enumerate() {
         let (i, DockerBuild::Build(target)) = (i + 1, &target.build);
         writeln!(f, "target \"{i}\" {{")?;
+
+        // TODO: https://github.com/docker/buildx/issues/179
+        // https://github.com/docker/buildx/blob/ada44e82eaed1d0f1a8c43ecd4116aefef2ef2a8/docs/bake-reference.md#targetentitlements
+        // if let Some(allow) = &target.allow {
+        //     writeln!(f, "  entitlements = [{allow:?}]")?;
+        // }
 
         if !target.build_args.is_empty() {
             writeln!(f, "  args = {{")?;
@@ -297,6 +321,10 @@ enum DockerBuild {
 #[derive(clap::Args, Debug, Clone)]
 struct BuildArgs {
     path_or_url: String, // context
+
+    /// Allow extra privileged entitlement
+    #[arg(long = "allow")]
+    allow: Option<String>, // entitlements
 
     /// Set build-time variables
     #[arg(long = "build-arg")]
