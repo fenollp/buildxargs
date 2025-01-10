@@ -13,7 +13,7 @@ fn cli_installed_docker_usage() {
 
     let cmd = Command::new("docker").env("DOCKER_BUILDKIT", "1").arg("--help").output().unwrap();
     assert_eq!(cmd.status.code(), Some(0));
-    #[allow(deprecated)]
+    #[expect(deprecated)]
     let re_home = |usage: String| match std::env::home_dir() {
         None => usage,
         Some(home) => usage.replace(&home.into_os_string().into_string().unwrap(), "~"),
@@ -148,3 +148,5 @@ Options:
 
 Experimental commands and flags are hidden. Set BUILDX_EXPERIMENTAL=1 to show them.
 "#;
+
+// TODO: handle "Experimental commands and flags are hidden. Set BUILDX_EXPERIMENTAL=1 to show them."
