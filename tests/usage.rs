@@ -9,6 +9,7 @@ fn cli_main_usage() {
 Usage: buildxargs [OPTIONS]
 
 Options:
+      --allow <ALLOW>        Allow build to access specified resources
   -f, --file <FILE>          Read commands from file [default: -]
       --no-cache             Do not use cache when building the image
       --print                Print the options without building
