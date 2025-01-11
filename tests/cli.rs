@@ -3,7 +3,7 @@ use assert_fs::prelude::{FileWriteStr, PathChild};
 use predicates::{prelude::PredicateBooleanExt, str::contains};
 
 const COMMANDS: &str = r#"
-docker build                          --allow=fs.write=$TMP --build-arg DO_NOT_REENCODE=1 --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc' --output=$TMP https://github.com/fenollp/dockerhost-tools--yt-dlp.git
+docker build                          --allow=fs.write=$TMP --output=type=local,dest=$TMP --build-arg IMG_URL='https://img.freepik.com/free-vector/hand-drawn-fresh-pineapple-vector_53876-108732.jpg?t=st=1728727735~exp=1728731335~hmac=8c5e57ed27047cf4e179a33d9c010b2a624a9f9502c181b278c7b4cace21e1d5&w=740' --build-arg ARGs='-o output.svg -rep 9 -m 6 -n 99 -v -bg FFF' https://github.com/fenollp/dockerhost-tools.git#main:/primitive
 docker build -o=$TMP --platform=local --allow=fs.write=$TMP --build-arg PREBUILT=1 https://github.com/FuzzyMonkeyCo/monkey.git
 docker build         --platform=local --allow=fs.write=$TMP -o $TMP                https://github.com/docker/buildx.git
 "#;
@@ -20,14 +20,14 @@ const PRINTED: &str = r#"{
   },
   "target": {
     "1": {
-      "context": "https://github.com/fenollp/dockerhost-tools--yt-dlp.git",
+      "context": "https://github.com/fenollp/dockerhost-tools.git#main:/primitive",
       "dockerfile": "Dockerfile",
       "args": {
-        "ARGs": "--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc",
-        "DO_NOT_REENCODE": "1"
+        "ARGs": "-o output.svg -rep 9 -m 6 -n 99 -v -bg FFF",
+        "IMG_URL": "https://img.freepik.com/free-vector/hand-drawn-fresh-pineapple-vector_53876-108732.jpg?t=st=1728727735~exp=1728731335~hmac=8c5e57ed27047cf4e179a33d9c010b2a624a9f9502c181b278c7b4cace21e1d5\u0026w=740"
       },
       "output": [
-        "$TMP"
+        "type=local,dest=$TMP"
       ]
     },
     "2": {
