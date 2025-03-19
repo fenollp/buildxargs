@@ -20,10 +20,14 @@ fn main() -> Res<()> {
         return version();
     }
 
-    let blanks = |line: &String| !line.trim().is_empty();
-    let cmds: Vec<String> = stdin().lock().lines().map_while(Result::ok).filter(blanks).collect();
+    let cmds: Vec<_> = stdin()
+        .lock()
+        .lines()
+        .map_while(Result::ok)
+        .filter(|line| !line.trim().is_empty())
+        .collect();
     if cmds.is_empty() {
-        return Err("no commands given".into());
+        return Err("no `docker build` commands given on STDIN".into());
     }
 
     // Parse here to fail early
@@ -80,36 +84,8 @@ fn run_bake(args: Arguments, targets: &[DockerBuildArgs]) -> Res<ExitStatus> {
     command.arg("buildx");
     command.arg("bake");
 
-    let mut entitlements: Vec<_> = targets
-        .iter()
-        .map(|t| &t.build)
-        .flat_map(|DockerBuild::Build(t)| {
-            t.allow
-                .iter()
-                .cloned()
-                // https://docs.docker.com/reference/cli/docker/buildx/bake/#allow
-                .chain(t.file.iter().filter(|f| f != &"-").map(|f| format!("fs.read={f}")))
-                .chain(
-                    t.output
-                        .iter()
-                        .filter(|o| o != &"-" && !o.contains("dest=-"))
-                        .filter(|o| {
-                            !o.contains("type=oci")
-                                && !o.contains("type=docker")
-                                && !o.contains("type=image")
-                                && !o.contains("type=registry")
-                        })
-                        .filter(|o| !o.contains("type="))
-                        .map(|o| format!("fs.write={o}")),
-                )
-        })
-        .collect();
-    if !entitlements.is_empty() {
-        entitlements.sort();
-        entitlements.dedup();
-        for allow in entitlements {
-            command.args(["--allow", &allow]);
-        }
+    for allow in entitlements(targets) {
+        command.args(["--allow", &allow]);
     }
 
     command.arg("-f-").stdin(Stdio::piped()).stdout(Stdio::inherit()).stderr(Stdio::inherit());
@@ -117,11 +93,13 @@ fn run_bake(args: Arguments, targets: &[DockerBuildArgs]) -> Res<ExitStatus> {
     command.args(args.finish());
 
     let mut child = command.spawn().expect("Failed to spawn `docker buildx bake` process");
+
     let mut stdin = child.stdin.take().expect("Failed to open STDIN");
     let targets = targets.to_vec();
     spawn(move || {
         write_as_buildx_bake(&mut stdin, &targets).expect("Failed to write to STDIN");
     });
+
     Ok(child.wait()?)
 }
 
@@ -194,6 +172,39 @@ fn parse_shell_commands(cmds: &[String]) -> Res<Vec<DockerBuildArgs>> {
         }
     }
     Ok(targets)
+}
+
+// Turns entitlements & guess some more so they can be passed to `bake`
+fn entitlements(targets: &[DockerBuildArgs]) -> Vec<String> {
+    let mut entitlements: Vec<_> = targets
+        .iter()
+        .map(|t| &t.build)
+        .flat_map(|DockerBuild::Build(t)| {
+            t.allow
+                .iter()
+                .cloned()
+                // https://docs.docker.com/reference/cli/docker/buildx/bake/#allow
+                .chain(t.file.iter().filter(|f| f != &"-").map(|f| format!("fs.read={f}")))
+                .chain(
+                    t.output
+                        .iter()
+                        .filter(|o| o != &"-" && !o.contains("dest=-"))
+                        .filter(|o| {
+                            !o.contains("type=oci")
+                                && !o.contains("type=docker")
+                                && !o.contains("type=image")
+                                && !o.contains("type=registry")
+                        })
+                        .filter(|o| !o.contains("type="))
+                        .map(|o| format!("fs.write={o}")),
+                )
+        })
+        .collect();
+
+    entitlements.sort();
+    entitlements.dedup();
+
+    entitlements
 }
 
 fn write_as_buildx_bake(f: &mut impl Write, targets: &[DockerBuildArgs]) -> Res<()> {
