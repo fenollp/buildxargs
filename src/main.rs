@@ -1,67 +1,27 @@
 use std::{
-    fs::File,
-    io::{stderr, stdin, BufRead, BufReader, Write},
-    process::{Command, ExitStatus},
+    io::{stderr, stdin, BufRead, Write},
+    process::{exit, Command, ExitStatus, Output},
 };
 
 use buildxargs::try_quick;
 use clap::Parser;
+use pico_args::Arguments;
 use tempfile::NamedTempFile;
 
 type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
-#[derive(Parser, Debug)]
-#[clap(author, version, about, long_about=None)]
-// CliArgs correspond to `docker buildx bake --help`
-struct CliArgs {
-    /// Allow build to access specified resources
-    #[arg(long = "allow")]
-    allow: Vec<String>, // stringArray
-
-    /// Read commands from file.
-    #[arg(short, long="file", default_value_t=String::from("-"))]
-    file: String,
-
-    /// Do not use cache when building the image
-    #[arg(long = "no-cache")]
-    no_cache: bool,
-
-    /// Print the options without building
-    #[arg(long = "print")]
-    print: bool,
-
-    /// Set type of progress output ("plain", "tty")
-    #[arg(long="progress", default_value_t=String::from("auto"))]
-    progress: String,
-
-    /// Always attempt to pull all referenced images
-    #[arg(long = "pull")]
-    pull: bool,
-
-    /// Print more things
-    #[arg(long = "debug")]
-    debug: bool,
-
-    /// Retry each failed build at most this many times
-    #[arg(long = "retry", default_value_t = 3u8)]
-    retry: u8,
-}
-
 fn main() -> Res<()> {
-    let args = CliArgs::parse();
+    let mut args = Arguments::from_env();
+
+    if args.contains("--help") {
+        return help();
+    }
+    if args.contains(["-V", "--version"]) {
+        return version();
+    }
 
     let blanks = |line: &String| !line.trim().is_empty();
-    let cmds: Vec<String> = if args.file == "-" {
-        stdin().lock().lines().map_while(Result::ok).filter(blanks).collect()
-    } else {
-        let file = File::open(&args.file).map_err(|e| match e {
-            std::io::Error { .. } if e.kind() == std::io::ErrorKind::NotFound => {
-                format!("not found: {}", &args.file)
-            }
-            _ => e.to_string(),
-        })?;
-        BufReader::new(file).lines().map_while(Result::ok).filter(blanks).collect()
-    };
+    let cmds: Vec<String> = stdin().lock().lines().map_while(Result::ok).filter(blanks).collect();
     if cmds.is_empty() {
         return Err("no commands given".into());
     }
@@ -69,14 +29,15 @@ fn main() -> Res<()> {
     // Parse here to fail early
     let targets = parse_shell_commands(&cmds)?;
 
-    if args.debug {
+    if args.contains(["-D", "--debug"]) {
         let mut stderr = stderr().lock();
         write_as_buildx_bake(&mut stderr, &targets)?;
     }
 
-    let ixs_failed = try_quick(&targets, args.retry, |targets: &[DockerBuildArgs]| -> Res<()> {
+    let retry = args.opt_value_from_str("--retry")?.unwrap_or(3);
+    let ixs_failed = try_quick(&targets, retry, |targets: &[DockerBuildArgs]| -> Res<()> {
         let prefix = "command `docker buildx bake`";
-        let status = run_bake(&args, targets)?;
+        let status = run_bake(args.clone(), targets)?;
         match status.code() {
             None => Err(format!("{prefix} terminated by signal").into()),
             Some(0) => Ok(()),
@@ -92,7 +53,7 @@ fn main() -> Res<()> {
                     printed = true;
                     eprintln!("Terminated successfully:");
                 }
-                eprintln!("  {}", cmd);
+                eprintln!("  {cmd}");
             }
         }
 
@@ -107,28 +68,17 @@ fn main() -> Res<()> {
             }
         }
         let n = ixs_failed.len();
-        let m = args.retry;
-        return Err(format!("{n} jobs failed after {m} retries",).into());
+        return Err(format!("{n} jobs failed after {retry} retries").into());
     }
 
     Ok(())
 }
 
-fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Res<ExitStatus> {
+fn run_bake(args: Arguments, targets: &[DockerBuildArgs]) -> Res<ExitStatus> {
     let mut command = Command::new("docker");
     command.env("DOCKER_BUILDKIT", "1");
     command.arg("buildx");
     command.arg("bake");
-    command.arg("--progress").arg(&args.progress);
-    if args.no_cache {
-        command.arg("--no-cache");
-    }
-    if args.print {
-        command.arg("--print");
-    }
-    if args.pull {
-        command.arg("--pull");
-    }
 
     let mut entitlements: Vec<_> = targets
         .iter()
@@ -153,7 +103,6 @@ fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Res<ExitStatus> {
                         .map(|o| format!("fs.write={o}")),
                 )
         })
-        .chain(args.allow.iter().cloned())
         .collect();
     if !entitlements.is_empty() {
         entitlements.sort();
@@ -170,7 +119,57 @@ fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Res<ExitStatus> {
     command.arg("-f");
     command.arg(f.path());
 
+    command.args(args.finish());
+
     Ok(command.status()?)
+}
+
+#[expect(clippy::needless_return)]
+fn help() -> Res<()> {
+    let mut command = Command::new("docker");
+    command.args(["buildx", "bake", "--help"]);
+    let Output { stderr, stdout, status } = command.output()?;
+    if !status.success() {
+        eprintln!("{}", String::from_utf8_lossy(&stderr));
+        exit(1);
+    }
+    println!("{}", String::from_utf8_lossy(&stdout));
+
+    println!(
+        r#"--
+
+xargs for BuildKit with docker buildx bake
+
+Usage: {app} [BAKE OPTIONS] [OPTIONS]
+
+Options:
+      --retry <RETRY>        Retry each failed build at most this many times [default: 3]
+      --help                 Print help
+  -V, --version              Print version
+
+Try:
+  {app} <<EOF
+docker build --platform=local -o . https://github.com/docker/buildx.git
+docker build --tag my-image:latest https://github.com/bojand/ghz.git
+EOF
+
+Note that all environment variables (such as $DOCKER_HOST) are passed through to `bake`.
+"#,
+        app = env!("CARGO_PKG_NAME")
+    );
+    return Ok(());
+}
+
+#[expect(clippy::needless_return)]
+#[expect(clippy::unnecessary_wraps)]
+fn version() -> Res<()> {
+    println!(
+        "{} v{} -- {}",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_AUTHORS")
+    );
+    return Ok(());
 }
 
 fn parse_shell_commands(cmds: &[String]) -> Res<Vec<DockerBuildArgs>> {
