@@ -1,7 +1,6 @@
 use std::{
     fs::File,
     io::{stderr, stdin, BufRead, BufReader, Write},
-    iter::once,
     process::{Command, ExitStatus},
 };
 
@@ -17,7 +16,7 @@ type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + '
 struct CliArgs {
     /// Allow build to access specified resources
     #[arg(long = "allow")]
-    allow: Option<String>,
+    allow: Vec<String>, // stringArray
 
     /// Read commands from file.
     #[arg(short, long="file", default_value_t=String::from("-"))]
@@ -131,17 +130,37 @@ fn run_bake(args: &CliArgs, targets: &[DockerBuildArgs]) -> Res<ExitStatus> {
         command.arg("--pull");
     }
 
-    let entitlements =
-        targets.iter().map(|t| &t.build).filter_map(|DockerBuild::Build(t)| t.allow.as_deref());
-    let mut entitlements: Vec<&str> = if let Some(ref allow) = args.allow {
-        entitlements.chain(once(allow.as_ref())).collect()
-    } else {
-        entitlements.collect()
-    };
+    let mut entitlements: Vec<_> = targets
+        .iter()
+        .map(|t| &t.build)
+        .flat_map(|DockerBuild::Build(t)| {
+            t.allow
+                .iter()
+                .cloned()
+                // https://docs.docker.com/reference/cli/docker/buildx/bake/#allow
+                .chain(t.file.iter().filter(|f| f != &"-").map(|f| format!("fs.read={f}")))
+                .chain(
+                    t.output
+                        .iter()
+                        .filter(|o| o != &"-" && !o.contains("dest=-"))
+                        .filter(|o| {
+                            !o.contains("type=oci")
+                                && !o.contains("type=docker")
+                                && !o.contains("type=image")
+                                && !o.contains("type=registry")
+                        })
+                        .filter(|o| !o.contains("type="))
+                        .map(|o| format!("fs.write={o}")),
+                )
+        })
+        .chain(args.allow.iter().cloned())
+        .collect();
     if !entitlements.is_empty() {
         entitlements.sort();
         entitlements.dedup();
-        command.arg(format!("--allow={}", entitlements.join(",")));
+        for allow in entitlements {
+            command.args(["--allow", &allow]);
+        }
     }
 
     let mut f = NamedTempFile::new()?;
@@ -189,8 +208,8 @@ fn write_as_buildx_bake(f: &mut impl Write, targets: &[DockerBuildArgs]) -> Res<
 
         // TODO: https://github.com/docker/buildx/issues/179
         // https://github.com/docker/buildx/blob/ada44e82eaed1d0f1a8c43ecd4116aefef2ef2a8/docs/bake-reference.md#targetentitlements
-        // if let Some(allow) = &target.allow {
-        //     writeln!(f, "  entitlements = [{allow:?}]")?;
+        // if !target.allow.is_empty() {
+        //     writeln!(f, "  entitlements = {:?}", target.allow)?;
         // }
 
         if !target.build_args.is_empty() {
@@ -324,7 +343,7 @@ struct BuildArgs {
 
     /// Allow extra privileged entitlement
     #[arg(long = "allow")]
-    allow: Option<String>, // entitlements
+    allow: Vec<String>, // entitlements (stringArray)
 
     /// Set build-time variables
     #[arg(long = "build-arg")]

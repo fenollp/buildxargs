@@ -27,7 +27,10 @@ const PRINTED: &str = r#"{
         "IMG_URL": "https://img.freepik.com/free-vector/hand-drawn-fresh-pineapple-vector_53876-108732.jpg?t=st=1728727735~exp=1728731335~hmac=8c5e57ed27047cf4e179a33d9c010b2a624a9f9502c181b278c7b4cace21e1d5\u0026w=740"
       },
       "output": [
-        "type=local,dest=$TMP"
+        {
+          "dest": "$TMP",
+          "type": "local"
+        }
       ]
     },
     "2": {
@@ -40,7 +43,10 @@ const PRINTED: &str = r#"{
         "local"
       ],
       "output": [
-        "$TMP"
+        {
+          "dest": "$TMP",
+          "type": "local"
+        }
       ]
     },
     "3": {
@@ -50,7 +56,10 @@ const PRINTED: &str = r#"{
         "local"
       ],
       "output": [
-        "$TMP"
+        {
+          "dest": "$TMP",
+          "type": "local"
+        }
       ]
     }
   }
@@ -120,53 +129,54 @@ fn cli_exec_file() {
     }
 }
 
-#[test]
-fn cli_exec_retrying() {
+#[test_case::test_matrix([true, false])]
+fn cli_exec_retrying(no_cache: bool) {
     let tmp_dir = assert_fs::TempDir::new().unwrap();
     let girouette_dockerfile = tmp_dir.child("girouette.Dockerfile");
-    girouette_dockerfile.write_str(r#"
-# syntax=docker.io/docker/dockerfile:1@sha256:443aab4ca21183e069e7d8b2dc68006594f40bddf1b15bbd83f5137bd93e80e2
-FROM --platform=$BUILDPLATFORM docker.io/library/alpine@sha256:7580ece7963bfa863801466c0a488f11c86f85d9988051a9f9c68cb27f6b7872 AS alpine
-FROM alpine AS tryin
+    girouette_dockerfile
+        .write_str(
+            r#"
+# syntax = docker/dockerfile:1
+FROM --platform=$BUILDPLATFORM alpine AS tryin
 ARG FAIL
 ARG SLEEP=1
 RUN set -ux && sleep "$SLEEP" && [[ -z "${FAIL:-}" ]] && echo Passed! >/girouette
 FROM scratch
 COPY --from=tryin /girouette /
-"#).unwrap();
+"#,
+        )
+        .unwrap();
     let girouette_dockerfile = girouette_dockerfile.path().display();
     let tmp_dir = tmp_dir.path().display();
 
-    for no_cache in [true, false] {
-        let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
-        cmd.arg("--debug");
-        if no_cache {
-            cmd.arg("--no-cache");
-        }
-        cmd.write_stdin(format!(
-            r#"
+    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
+    cmd.arg("--debug");
+    if no_cache {
+        cmd.arg("--no-cache");
+    }
+    cmd.write_stdin(format!(
+        r#"
 docker build -o={tmp_dir} --build-arg FAIL=1 -f {girouette_dockerfile} .
 docker build -o={tmp_dir}                    -f {girouette_dockerfile} .
 "#
-        ))
-        .assert()
-        .failure()
-        .code(1)
-        .stdout("")
-        .stderr(
-            contains(format!(
-                r#"
+    ))
+    .assert()
+    .failure()
+    .code(1)
+    .stdout("")
+    .stderr(
+        contains(format!(
+            r#"
 Terminated successfully:
   docker build -o={tmp_dir}                    -f {girouette_dockerfile} .
 Failed:
   docker build -o={tmp_dir} --build-arg FAIL=1 -f {girouette_dockerfile} .
     command `docker buildx bake` failed with 1
 "#
-            ))
-            .and(
-                contains(r#""1 jobs failed after 3 retries""#)
-                    .or(contains(r#""2 jobs failed after 3 retries""#)),
-            ),
-        );
-    }
+        ))
+        .and(
+            contains(r#""1 jobs failed after 3 retries""#)
+                .or(contains(r#""2 jobs failed after 3 retries""#)),
+        ),
+    );
 }
