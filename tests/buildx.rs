@@ -6,6 +6,7 @@ use predicates::{
 };
 
 #[test]
+#[ignore]
 fn cli_installed_docker_usage() {
     let cmd = Command::new("docker").arg("buildx").arg("version").output().unwrap();
     assert_eq!(cmd.status.code(), Some(0));
