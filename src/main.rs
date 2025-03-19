@@ -1,12 +1,12 @@
 use std::{
     io::{stderr, stdin, BufRead, Write},
-    process::{exit, Command, ExitStatus, Output},
+    process::{exit, Command, ExitStatus, Output, Stdio},
+    thread::spawn,
 };
 
 use buildxargs::try_quick;
 use clap::Parser;
 use pico_args::Arguments;
-use tempfile::NamedTempFile;
 
 type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
@@ -112,16 +112,17 @@ fn run_bake(args: Arguments, targets: &[DockerBuildArgs]) -> Res<ExitStatus> {
         }
     }
 
-    let mut f = NamedTempFile::new()?;
-    write_as_buildx_bake(&mut f, targets)?;
-    f.flush()?;
-    // TODO: pass data through BufWriter to STDIN with `-f-`
-    command.arg("-f");
-    command.arg(f.path());
+    command.arg("-f-").stdin(Stdio::piped()).stdout(Stdio::inherit()).stderr(Stdio::inherit());
 
     command.args(args.finish());
 
-    Ok(command.status()?)
+    let mut child = command.spawn().expect("Failed to spawn `docker buildx bake` process");
+    let mut stdin = child.stdin.take().expect("Failed to open STDIN");
+    let targets = targets.to_vec();
+    spawn(move || {
+        write_as_buildx_bake(&mut stdin, &targets).expect("Failed to write to STDIN");
+    });
+    Ok(child.wait()?)
 }
 
 #[expect(clippy::needless_return)]
