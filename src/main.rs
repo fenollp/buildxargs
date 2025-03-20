@@ -179,20 +179,20 @@ fn parse_shell_commands(cmds: &[String]) -> Res<Vec<Build>> {
             path_or_url: String::new(),
             allow: argz.values_from_str("--allow")?,
             build_args: argz.values_from_str("--build-arg")?,
-            build_context: argz.values_from_str("--build-context")?.first().cloned(), //FIXME
-            cache_from: argz.values_from_str("--cache-from")?.first().cloned(),       //FIXME
-            cache_to: argz.values_from_str("--cache-to")?.first().cloned(),           //FIXME
+            build_context: argz.values_from_str("--build-context")?,
+            cache_from: argz.values_from_str("--cache-from")?,
+            cache_to: argz.values_from_str("--cache-to")?,
             file: argz.opt_value_from_str(["-f", "--file"])?,
-            label: argz.values_from_str("--label")?.first().cloned(), //FIXME
+            labels: argz.values_from_str("--label")?,
             network: argz.opt_value_from_str("--network")?,
             no_cache: argz.contains("--no-cache"),
-            no_cache_filter: argz.values_from_str("--no-cache-filter")?.first().cloned(), //FIXME
-            output: argz.values_from_str(["-o", "--output"])?.first().cloned(),           //FIXME
+            no_cache_filter: argz.values_from_str("--no-cache-filter")?,
+            outputs: argz.values_from_str(["-o", "--output"])?,
             platform: argz.opt_value_from_str("--platform")?,
             pull: argz.contains("--pull"),
-            secret: argz.values_from_str("--secret")?.first().cloned(), //FIXME
-            ssh: argz.values_from_str("--ssh")?.first().cloned(),       //FIXME
-            tag: argz.values_from_str(["-t", "--tag"])?.first().cloned(), //FIXME
+            secret: argz.values_from_str("--secret")?,
+            ssh: argz.values_from_str("--ssh")?,
+            tags: argz.values_from_str(["-t", "--tag"])?,
             target: argz.opt_value_from_str("--target")?,
         };
 
@@ -210,14 +210,14 @@ fn parse_shell_commands(cmds: &[String]) -> Res<Vec<Build>> {
 fn entitlements(targets: &[Build]) -> Vec<String> {
     let mut entitlements: Vec<_> = targets
         .iter()
-        .flat_map(|Build { allow, file, output, .. }| {
+        .flat_map(|Build { allow, file, outputs, .. }| {
             allow
                 .iter()
                 .cloned()
                 // https://docs.docker.com/reference/cli/docker/buildx/bake/#allow
                 .chain(file.iter().filter(|f| f != &"-").map(|f| format!("fs.read={f}")))
                 .chain(
-                    output
+                    outputs
                         .iter()
                         .filter(|o| o != &"-" && !o.contains("dest=-"))
                         .filter(|o| {
@@ -247,15 +247,36 @@ fn write_as_buildx_bake(f: &mut impl Write, targets: &[Build]) -> Res<()> {
     for (i, target) in targets.iter().enumerate() {
         writeln!(f, "target \"{}\" {{", i + 1)?;
 
+        let Build {
+            path_or_url,
+            allow: _,
+            build_args,
+            build_context,
+            cache_from,
+            cache_to,
+            file,
+            labels,
+            network,
+            no_cache,
+            no_cache_filter,
+            outputs,
+            platform,
+            pull,
+            secret,
+            ssh,
+            tags,
+            target,
+        } = target;
+
         // TODO: https://github.com/docker/buildx/issues/179
         // https://github.com/docker/buildx/blob/ada44e82eaed1d0f1a8c43ecd4116aefef2ef2a8/docs/bake-reference.md#targetentitlements
-        // if !target.allow.is_empty() {
-        //     writeln!(f, "  entitlements = {:?}", target.allow)?;
+        // if !allow.is_empty() {
+        //     writeln!(f, "  entitlements = {allow:?}")?;
         // }
 
-        if !target.build_args.is_empty() {
+        if !build_args.is_empty() {
             writeln!(f, "  args = {{")?;
-            for arg in &target.build_args {
+            for arg in build_args {
                 match arg.split_once('=') {
                     Some((key, value)) => writeln!(f, "    {key:?} = {value:?}")?,
                     None => return Err(format!("bad key=value: {arg:?}").into()),
@@ -264,66 +285,79 @@ fn write_as_buildx_bake(f: &mut impl Write, targets: &[Build]) -> Res<()> {
             writeln!(f, "  }}")?;
         }
 
-        if let Some(cache_from) = &target.cache_from {
-            writeln!(f, "  cache-from = [{cache_from:?}]")?;
+        if !cache_from.is_empty() {
+            writeln!(f, "  cache-from = {cache_from:?}")?;
         }
 
-        if let Some(cache_to) = &target.cache_to {
-            writeln!(f, "  cache-to = [{cache_to:?}]")?;
+        if !cache_to.is_empty() {
+            writeln!(f, "  cache-to = {cache_to:?}")?;
         }
 
-        let context = &target.path_or_url;
-        writeln!(f, "  context = {context:?}")?;
+        writeln!(f, "  context = {path_or_url:?}")?;
 
-        if let Some(build_context) = &target.build_context {
-            writeln!(f, "  contexts = [{build_context:?}]")?;
+        if !build_context.is_empty() {
+            writeln!(f, "  contexts = {{")?;
+            for ctx in build_context {
+                match ctx.split_once('=') {
+                    Some((key, value)) => writeln!(f, "    {key:?} = {value:?}")?,
+                    None => return Err(format!("bad key=value: {ctx:?}").into()),
+                }
+            }
+            writeln!(f, "  }}")?;
         }
 
-        if let Some(file) = &target.file {
+        if let Some(file) = file {
             writeln!(f, "  dockerfile = {file:?}")?;
         }
 
-        if let Some(label) = &target.label {
-            writeln!(f, "  labels = [{label:?}]")?;
+        if !labels.is_empty() {
+            writeln!(f, "  labels = {{")?;
+            for label in labels {
+                match label.split_once('=') {
+                    Some((key, value)) => writeln!(f, "    {key:?} = {value:?}")?,
+                    None => return Err(format!("bad key=value: {label:?}").into()),
+                }
+            }
+            writeln!(f, "  }}")?;
         }
 
-        if let Some(network) = &target.network {
+        if let Some(network) = network {
             writeln!(f, "  network = {network:?}")?;
         }
 
-        if target.no_cache {
+        if *no_cache {
             writeln!(f, "  no-cache = true")?;
         }
 
-        if let Some(no_cache_filter) = &target.no_cache_filter {
-            writeln!(f, "  no-cache-filter = [{no_cache_filter:?}]")?;
+        if !no_cache_filter.is_empty() {
+            writeln!(f, "  no-cache-filter = {no_cache_filter:?}")?;
         }
 
-        if let Some(output) = &target.output {
-            writeln!(f, "  output = [{output:?}]")?;
+        if !outputs.is_empty() {
+            writeln!(f, "  output = {outputs:?}")?;
         }
 
-        if let Some(platform) = &target.platform {
+        if let Some(platform) = platform {
             writeln!(f, "  platforms = [{platform:?}]")?;
         }
 
-        if target.pull {
+        if *pull {
             writeln!(f, "  pull = true")?;
         }
 
-        if let Some(secret) = &target.secret {
-            writeln!(f, "  secrets = [{secret:?}]")?;
+        if !secret.is_empty() {
+            writeln!(f, "  secret = {secret:?}")?;
         }
 
-        if let Some(ssh) = &target.ssh {
-            writeln!(f, "  ssh = [{ssh:?}]")?;
+        if !ssh.is_empty() {
+            writeln!(f, "  ssh = {ssh:?}")?;
         }
 
-        if let Some(tag) = &target.tag {
-            writeln!(f, "  tags = [{tag:?}]")?;
+        if !tags.is_empty() {
+            writeln!(f, "  tags = {tags:?}")?;
         }
 
-        if let Some(target) = &target.target {
+        if let Some(target) = target {
             writeln!(f, "  target = [{target:?}]")?;
         }
 
@@ -356,19 +390,19 @@ struct Build {
     path_or_url: String,
     allow: Vec<String>,
     build_args: Vec<String>,
-    build_context: Option<String>,
-    cache_from: Option<String>,
-    cache_to: Option<String>,
+    build_context: Vec<String>,
+    cache_from: Vec<String>,
+    cache_to: Vec<String>,
     file: Option<String>,
-    label: Option<String>,
+    labels: Vec<String>,
     network: Option<String>,
     no_cache: bool,
-    no_cache_filter: Option<String>,
-    output: Option<String>,
+    no_cache_filter: Vec<String>,
+    outputs: Vec<String>,
     platform: Option<String>,
     pull: bool,
-    secret: Option<String>,
-    ssh: Option<String>,
-    tag: Option<String>,
+    secret: Vec<String>,
+    ssh: Vec<String>,
+    tags: Vec<String>,
     target: Option<String>,
 }
