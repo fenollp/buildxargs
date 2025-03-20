@@ -5,7 +5,7 @@ An efficient way of running multiple concurrent `docker build` jobs on the [Buil
 ```shell
 # export DOCKER_HOST=ssh://...
 ❯ buildxargs <<EOF
-docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc' --output=$HOME https://github.com/fenollp/dockerhost-tools--yt-dlp.git
+docker build --build-arg ARGs='--format mp4 -- https://www.youtube.com/watch?v=Hj7LwZqTflc' --output=~/Videos https://github.com/fenollp/dockerhost-tools.git
 docker build -o=. --platform=local --build-arg PREBUILT=1 https://github.com/FuzzyMonkeyCo/monkey.git
 docker build --platform=local -o . https://github.com/docker/buildx.git
 EOF
@@ -25,21 +25,24 @@ EOF
 ## Usage
 
 ```shell
+...docker buildx bake's --help...
+
+--
+
 xargs for BuildKit with docker buildx bake
 
-Usage: buildxargs [OPTIONS]
+Usage: buildxargs [BAKE OPTIONS] [OPTIONS]
 
 Options:
-      --allow <ALLOW>        Allow build to access specified resources
-  -f, --file <FILE>          Read commands from file [default: -]
-      --no-cache             Do not use cache when building the image
-      --print                Print the options without building
-      --progress <PROGRESS>  Set type of progress output ("plain", "tty") [default: auto]
-      --pull                 Always attempt to pull all referenced images
-      --debug                Print more things
       --retry <RETRY>        Retry each failed build at most this many times [default: 3]
-  -h, --help                 Print help
+      --help                 Print help
   -V, --version              Print version
+
+Try:
+  buildxargs <<EOF
+docker build --platform=local -o . https://github.com/docker/buildx.git
+docker build --tag my-image:latest https://github.com/bojand/ghz.git
+EOF
 ```
 
 ## Installing

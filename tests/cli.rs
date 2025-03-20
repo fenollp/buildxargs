@@ -79,15 +79,6 @@ fn cli_print_piped() {
 }
 
 #[test]
-fn cli_print_file() {
-    let tmp_file = assert_fs::TempDir::new().unwrap().child("commands.txt");
-    tmp_file.write_str(COMMANDS).unwrap();
-
-    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
-    cmd.arg("-f").arg(tmp_file.path()).arg("--print").assert().success().code(0).stdout(PRINTED);
-}
-
-#[test]
 fn cli_docker_uses_debug() {
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
     cmd.write_stdin(
@@ -100,33 +91,16 @@ fn cli_docker_uses_debug() {
     .stderr(contains(r#"Error: "Unsupported `docker --debug`""#));
 }
 
-#[test]
-fn cli_print_file_that_does_not_exist() {
-    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
-    cmd.arg("-f")
-        .arg("unexisting.txt")
-        .arg("--print")
-        .assert()
-        .failure()
-        .code(1)
-        .stdout("")
-        .stderr(contains(r#"Error: "not found: unexisting.txt""#));
-}
-
-#[test]
-fn cli_exec_file() {
+#[test_case::test_matrix([true, false])]
+fn cli_exec_file(no_cache: bool) {
     let tmp_dir = assert_fs::TempDir::new().unwrap();
-    let tmp_file = tmp_dir.child("commands.txt");
-    tmp_file.write_str(&COMMANDS.replace("$TMP", &tmp_dir.path().to_string_lossy())).unwrap();
 
-    for no_cache in [true, false] {
-        let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
-        cmd.arg("-f").arg(tmp_file.path());
-        if no_cache {
-            cmd.arg("--no-cache");
-        }
-        cmd.assert().success().code(0).stdout("");
+    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
+    cmd.write_stdin(COMMANDS.replace("$TMP", &tmp_dir.path().to_string_lossy()));
+    if no_cache {
+        cmd.arg("--no-cache");
     }
+    cmd.assert().success().code(0).stdout("");
 }
 
 #[test_case::test_matrix([true, false])]
