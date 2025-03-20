@@ -5,7 +5,6 @@ use std::{
 };
 
 use buildxargs::try_quick;
-use clap::Parser;
 use pico_args::Arguments;
 
 type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
@@ -39,7 +38,7 @@ fn main() -> Res<()> {
     }
 
     let retry = args.opt_value_from_str("--retry")?.unwrap_or(3);
-    let ixs_failed = try_quick(&targets, retry, |targets: &[DockerBuildArgs]| -> Res<()> {
+    let ixs_failed = try_quick(&targets, retry, |targets: &[Build]| -> Res<()> {
         let prefix = "command `docker buildx bake`";
         let status = run_bake(args.clone(), targets)?;
         match status.code() {
@@ -78,7 +77,7 @@ fn main() -> Res<()> {
     Ok(())
 }
 
-fn run_bake(args: Arguments, targets: &[DockerBuildArgs]) -> Res<ExitStatus> {
+fn run_bake(args: Arguments, targets: &[Build]) -> Res<ExitStatus> {
     let mut command = Command::new("docker");
     command.env("DOCKER_BUILDKIT", "1");
     command.arg("buildx");
@@ -151,42 +150,74 @@ fn version() -> Res<()> {
     return Ok(());
 }
 
-fn parse_shell_commands(cmds: &[String]) -> Res<Vec<DockerBuildArgs>> {
+fn parse_shell_commands(cmds: &[String]) -> Res<Vec<Build>> {
     let mut targets = Vec::with_capacity(cmds.len());
     for cmd in cmds {
-        match shlex::split(cmd) {
-            None => return Err(format!("Typo in {cmd}").into()),
-            Some(words) => {
-                let build_args = DockerBuildArgs::try_parse_from(words).inspect_err(|e| {
-                    eprintln!("Could not parse {cmd}");
-                    e.print().expect("Error printing error");
-                })?;
+        let Some(shlexd) = shlex::split(cmd) else { return Err(format!("typo in {cmd}").into()) };
 
-                // TODO: decide how to use these instead of failing
-                if build_args.debug {
-                    return Err("Unsupported `docker --debug`".into());
-                }
+        #[expect(clippy::if_same_then_else)]
+        let skip = if shlexd.contains(&"-D".to_owned()) || shlexd.contains(&"--debug".to_owned()) {
+            return Err("Unsupported `docker --debug`".into());
+        } else if shlexd[..=1] == ["docker", "build"] {
+            2
+        } else if shlexd[..=2] == ["docker", "builder", "build"] {
+            3
+        } else if shlexd[..=2] == ["docker", "buildx", "b"] {
+            3
+        } else if shlexd[..=2] == ["docker", "buildx", "build"] {
+            3
+        } else if shlexd[..=2] == ["docker", "image", "build"] {
+            3
+        } else {
+            return Err(format!("not a `docker build` command: {cmd}").into());
+        };
 
-                targets.push(build_args);
-            }
-        }
+        let shlexd = shlexd.iter().skip(skip).map(|x| &**x).map(Into::into).collect();
+        let mut argz = Arguments::from_vec(shlexd);
+
+        let mut x = Build {
+            path_or_url: String::new(),
+            allow: argz.values_from_str("--allow")?,
+            build_args: argz.values_from_str("--build-arg")?,
+            build_context: argz.values_from_str("--build-context")?.first().cloned(), //FIXME
+            cache_from: argz.values_from_str("--cache-from")?.first().cloned(),       //FIXME
+            cache_to: argz.values_from_str("--cache-to")?.first().cloned(),           //FIXME
+            file: argz.opt_value_from_str(["-f", "--file"])?,
+            label: argz.values_from_str("--label")?.first().cloned(), //FIXME
+            network: argz.opt_value_from_str("--network")?,
+            no_cache: argz.contains("--no-cache"),
+            no_cache_filter: argz.values_from_str("--no-cache-filter")?.first().cloned(), //FIXME
+            output: argz.values_from_str(["-o", "--output"])?.first().cloned(),           //FIXME
+            platform: argz.opt_value_from_str("--platform")?,
+            pull: argz.contains("--pull"),
+            secret: argz.values_from_str("--secret")?.first().cloned(), //FIXME
+            ssh: argz.values_from_str("--ssh")?.first().cloned(),       //FIXME
+            tag: argz.values_from_str(["-t", "--tag"])?.first().cloned(), //FIXME
+            target: argz.opt_value_from_str("--target")?,
+        };
+
+        let leftovers = argz.finish();
+        // Let's assume users put this free-form arg last
+        x.path_or_url = leftovers.last().cloned().unwrap_or_default().to_string_lossy().to_string();
+
+        targets.push(x);
     }
+
     Ok(targets)
 }
 
 // Turns entitlements & guess some more so they can be passed to `bake`
-fn entitlements(targets: &[DockerBuildArgs]) -> Vec<String> {
+fn entitlements(targets: &[Build]) -> Vec<String> {
     let mut entitlements: Vec<_> = targets
         .iter()
-        .map(|t| &t.build)
-        .flat_map(|DockerBuild::Build(t)| {
-            t.allow
+        .flat_map(|Build { allow, file, output, .. }| {
+            allow
                 .iter()
                 .cloned()
                 // https://docs.docker.com/reference/cli/docker/buildx/bake/#allow
-                .chain(t.file.iter().filter(|f| f != &"-").map(|f| format!("fs.read={f}")))
+                .chain(file.iter().filter(|f| f != &"-").map(|f| format!("fs.read={f}")))
                 .chain(
-                    t.output
+                    output
                         .iter()
                         .filter(|o| o != &"-" && !o.contains("dest=-"))
                         .filter(|o| {
@@ -207,15 +238,14 @@ fn entitlements(targets: &[DockerBuildArgs]) -> Vec<String> {
     entitlements
 }
 
-fn write_as_buildx_bake(f: &mut impl Write, targets: &[DockerBuildArgs]) -> Res<()> {
+fn write_as_buildx_bake(f: &mut impl Write, targets: &[Build]) -> Res<()> {
     writeln!(f, "group \"default\" {{\n  targets = [")?;
     for i in 1..=targets.len() {
         writeln!(f, "    \"{i}\",")?;
     }
     writeln!(f, "  ]\n}}")?;
     for (i, target) in targets.iter().enumerate() {
-        let (i, DockerBuild::Build(target)) = (i + 1, &target.build);
-        writeln!(f, "target \"{i}\" {{")?;
+        writeln!(f, "target \"{}\" {{", i + 1)?;
 
         // TODO: https://github.com/docker/buildx/issues/179
         // https://github.com/docker/buildx/blob/ada44e82eaed1d0f1a8c43ecd4116aefef2ef2a8/docs/bake-reference.md#targetentitlements
@@ -302,122 +332,43 @@ fn write_as_buildx_bake(f: &mut impl Write, targets: &[DockerBuildArgs]) -> Res<
     Ok(())
 }
 
-#[derive(Parser, Debug, Clone)]
-#[clap(name="docker", about = "Start a build", long_about=None)]
-// DockerBuildArgs correspond to `DOCKER_BUILDKIT=1 docker build --help`
-struct DockerBuildArgs {
-    #[clap(subcommand)]
-    build: DockerBuild,
-
-    /// Enable debug mode
-    #[arg(long, short = 'D')]
-    debug: bool,
-    // TODO: pass these down to `bake` where possible
-    //       --config string      Location of client config files (default "/home/pete/.docker")
-    //   -c, --context string     Name of the context to use to connect to the daemon (overrides DOCKER_HOST env var and default context set with "docker context use")
-    //   -H, --host list          Daemon socket to connect to
-    //   -l, --log-level string   Set the logging level ("debug", "info", "warn", "error", "fatal") (default "info")
-    //       --tls                Use TLS; implied by --tlsverify
-    //       --tlscacert string   Trust certs signed only by this CA (default "/home/pete/.docker/ca.pem")
-    //       --tlscert string     Path to TLS certificate file (default "/home/pete/.docker/cert.pem")
-    //       --tlskey string      Path to TLS key file (default "/home/pete/.docker/key.pem")
-    //       --tlsverify          Use TLS and verify the remote
-}
-
-#[derive(clap::Subcommand, Debug, Clone)]
-enum DockerBuild {
-    Build(BuildArgs),
-}
-
 // https://github.com/docker/buildx/blob/master/docs/bake-reference.md#target
 // Complete list of valid target fields from https://docs.docker.com/engine/reference/commandline/buildx_bake
-// args
-// cache-from
-// cache-to
-// context
-// contexts
-// dockerfile
-// inherits
-// labels
-// no-cache
-// no-cache-filter
-// output
-// platforms
-// pull
-// secrets
-// ssh
-// tags
-// target
-#[derive(clap::Args, Debug, Clone)]
-struct BuildArgs {
-    path_or_url: String, // context
-
-    /// Allow extra privileged entitlement
-    #[arg(long = "allow")]
-    allow: Vec<String>, // entitlements (stringArray)
-
-    /// Set build-time variables
-    #[arg(long = "build-arg")]
-    build_args: Vec<String>, // args
-
-    /// Additional build contexts (e.g., name=path)
-    #[arg(long = "build-context")]
-    build_context: Option<String>, // contexts (TODO: stringArray)
-
-    /// External cache sources
-    #[arg(long = "cache-from")]
-    cache_from: Option<String>, // cache-from (TODO: stringArray)
-
-    /// Cache export destinations
-    #[arg(long = "cache-to")]
-    cache_to: Option<String>, // cache-to (TODO: stringArray)
-
-    /// Name of the Dockerfile
-    #[arg(short, long = "file")]
-    file: Option<String>, // dockerfile
-
-    /// Set metadata for an image
-    #[arg(long = "label")]
-    label: Option<String>, // labels (TODO: stringArray)
-
-    // FIXME: https://docs.rs/clap/latest/clap/enum.ArgAction.html#variant.Append
-    /// Set the networking mode for the "RUN" instructions during build (default "default")
-    #[arg(long = "network", action(clap::ArgAction::Append))]
+//  args
+//  cache-from
+//  cache-to
+//  context
+//  contexts
+//  dockerfile
+//  inherits
+//  labels
+//  no-cache
+//  no-cache-filter
+//  output
+//  platforms
+//  pull
+//  secrets
+//  ssh
+//  tags
+//  target
+#[derive(Debug, Clone)]
+struct Build {
+    path_or_url: String,
+    allow: Vec<String>,
+    build_args: Vec<String>,
+    build_context: Option<String>,
+    cache_from: Option<String>,
+    cache_to: Option<String>,
+    file: Option<String>,
+    label: Option<String>,
     network: Option<String>,
-
-    /// Do not use cache when building the image
-    #[arg(long = "no-cache")]
-    no_cache: bool, // no-cache
-
-    /// Do not cache specified stages
-    #[arg(long = "no-cache-filter")]
-    no_cache_filter: Option<String>, // no-cache-filter (TODO: stringArray)
-
-    /// Output destination (format: "type=local,dest=path")
-    #[arg(short, long = "output")]
-    output: Option<String>, // output (TODO: stringArray)
-
-    /// Set target platform for build
-    #[arg(long = "platform")]
-    platform: Option<String>, // platforms (TODO: stringArray)
-
-    /// Always attempt to pull all referenced images
-    #[arg(long = "pull")]
-    pull: bool, // pull
-
-    /// Secret to expose to the build (format: "id=mysecret[,src=/local/secret]")
-    #[arg(long = "push")]
-    secret: Option<String>, // secrets (TOOD: stringArray)
-
-    /// SSH agent socket or keys to expose to the build (format: "default|<id>[=<socket>|<key>[,<key>]]")
-    #[arg(long = "ssh")]
-    ssh: Option<String>, // ssh (TODO: stringArray)
-
-    /// Name and optionally a tag (format: "name:tag")
-    #[arg(short, long = "tag")]
-    tag: Option<String>, // tags (TODO: stringArray)
-
-    /// Set the target build stage to build
-    #[arg(long = "target")]
-    target: Option<String>, // target
+    no_cache: bool,
+    no_cache_filter: Option<String>,
+    output: Option<String>,
+    platform: Option<String>,
+    pull: bool,
+    secret: Option<String>,
+    ssh: Option<String>,
+    tag: Option<String>,
+    target: Option<String>,
 }
