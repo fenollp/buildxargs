@@ -1,4 +1,3 @@
-use assert_cmd::Command;
 use assert_fs::prelude::{FileWriteStr, PathChild};
 use predicates::{prelude::PredicateBooleanExt, str::contains};
 
@@ -68,7 +67,7 @@ const PRINTED: &str = r#"{
 
 #[test]
 fn cli_print_piped() {
-    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!();
     cmd.arg("--debug")
         .arg("--print")
         .write_stdin(COMMANDS)
@@ -80,7 +79,7 @@ fn cli_print_piped() {
 
 #[test]
 fn cli_docker_uses_debug() {
-    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!();
     cmd.write_stdin(
         "docker --debug build --platform=local -o $TMP https://github.com/docker/buildx.git",
     )
@@ -95,7 +94,7 @@ fn cli_docker_uses_debug() {
 fn cli_exec_file(no_cache: bool) {
     let tmp_dir = assert_fs::TempDir::new().unwrap();
 
-    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!();
     cmd.write_stdin(COMMANDS.replace("$TMP", &tmp_dir.path().to_string_lossy()));
     if no_cache {
         cmd.arg("--no-cache");
@@ -123,7 +122,7 @@ COPY --from=tryin /girouette /
     let girouette_dockerfile = girouette_dockerfile.path().display();
     let tmp_dir = tmp_dir.path().display();
 
-    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!();
     cmd.arg("--debug");
     if no_cache {
         cmd.arg("--no-cache");
