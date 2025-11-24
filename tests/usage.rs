@@ -1,9 +1,8 @@
-use assert_cmd::Command;
 use predicates::str::contains;
 
 #[test]
 fn cli_main_usage() {
-    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!();
     cmd.arg("--help").assert().success().code(0).stdout(contains(
         r#"
 --
